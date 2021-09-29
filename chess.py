@@ -186,8 +186,8 @@ class Board:
                 lst.append(Move(piece, loc))
         return lst
 
-    def add(self, piece_cls, color, loc):
-        self[loc] = piece_cls(self, color, loc)
+    def add(self, piece_cls, color, loc, dir=None):
+        self[loc] = piece_cls(self, color, loc, dir)
         return self[loc]
 
     def all_pieces(self, color, types=None):
@@ -207,11 +207,12 @@ class Board:
             return piece_values[self[loc].__class__]
 
 class Piece:
-    def __init__(self, board, color, loc):
+    def __init__(self, board, color, loc, dir=None):
         self.loc = loc
         self.board = board
         self.orig_location = True
         self.color = color
+        self.dir = dir
 
     def move(self, loc):
         self.board.move(self.loc, loc)
@@ -249,7 +250,6 @@ class Queen(Piece):
 
 class Pawn(Piece):
     char = '♙'
-    dir = 1     # up board or down board
 
     def moves(self, attacking_only=False):
         l = self.loc
@@ -443,7 +443,7 @@ if __name__ == "__main__":
     loc = Loc('c',3)
     l2 = Loc('c',5)
     b.add(King, BLACK, l2.modified(1,0))
-    b.add(Bishop, BLACK, l2)
+    b.add(Pawn, BLACK, l2, dir=-1)
     pc = b.add(King, WHITE, loc)
     chess = Chess(b)
     if 1:
