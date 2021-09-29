@@ -116,8 +116,9 @@ class Loc:
         return [Loc(n,n) for n in range(a+1,b+1)]
 
 class Move:
-    def __init__(self, piece, loc, val=0):
-        self.piece, self.loc, self.val = loc, val
+    def __init__(self, piece, loc, val=0, related=None):
+        self.piece, self.loc, self.val = piece, loc, val
+        self.related = related
 
     def __lt__(self, o):
         if not isinstance(o, Move):
@@ -154,6 +155,8 @@ class Board:
         self[b] = self[a]
         self[a] = blank
         move.piece.loc = b
+        if move.related:
+            self.move(move.related)
 
     def is_valid(self, l):
         return 0 <= l.x < self.size and 0<=l.y<self.size
@@ -280,6 +283,7 @@ class King(Piece):
     char = '♔'
 
     def all_moves(self, color, include_king=True):
+        B = self.board
         pc = B.all_pieces(color, (Knight, Bishop, Rook, Queen))
         pawns = B.all_pieces(color, (Pawn,))
         moves = chain(a.moves() for a in pc)
@@ -287,7 +291,7 @@ class King(Piece):
         all_moves = set(moves) | set(pwn_moves)
         if include_king:
             king = next(B.all_pieces(color, (King,)))
-            all_moves |= self.get_king_moves(self)
+            all_moves |= self.get_king_moves(king)
         return all_moves
 
     def get_king_moves(self, king):
@@ -304,16 +308,17 @@ class King(Piece):
         return [m for m in checks if m.loc==self.loc]
 
     def moves(self):
-        l = self.loc
+        loc = self.loc
         B = self.board
-        lst = [l.modified(*mod) for mod in piece_moves['King']]
+        lst = [loc.modified(*mod) for mod in piece_moves['King']]
         lst = self.remove_invalid(lst)
-        lst = [Move(self, l, B.get_loc_val(l)) for l in lst]
+        lst = [Move(self, l, self.board.get_loc_val(l)) for l in lst]
         unavailable = self.opponent_moves()
 
         if self.orig_location:
             lst = self.castling_moves(lst, unavailable)
-        return list(set(lst) - unavailable)
+        unavailable_locs = set(m.loc for m in unavailable)
+        return [m for m in lst if m.loc not in unavailable_locs]
 
     def castling_moves(self, lst, unavailable):
         a = Loc(0, self.loc.y)
@@ -323,7 +328,7 @@ class King(Piece):
         if not set(line) & unavailable:
             last = line[-1].loc.x
             if isrook and rook.orig_location and last==1:
-                lst.append(Move(self, l.modified(-2,0)))
+                lst.append(Move(self, l.modified(-2,0), related=Move(rook, l.modified(-1,0))))
 
         b = Loc(7, self.loc.y)
         rook = self.board[a]
@@ -332,7 +337,7 @@ class King(Piece):
         if not set(line) & unavailable:
             last = line[-1].loc.x
             if isrook and rook.orig_location and last==6:
-                lst.append(Move(self, l.modified(2,0)))
+                lst.append(Move(self, l.modified(2,0), related=Move(rook, l.modified(1,0))))
         return lst
 
 
@@ -406,6 +411,8 @@ class Chess:
             B.move(moves[0])
             self.n += 1
             self.current = x_col(self.current)
+            B.display()
+            input('continue > ')
 
 
 piece_values = {
@@ -415,6 +422,7 @@ piece_values = {
     Rook: 5,
     Queen: 9,
 }
+
 
 if __name__ == "__main__":
     b = Board(5)
