@@ -193,12 +193,16 @@ class Board:
     def all_pieces(self, color, types=None):
         for r in self.b:
             for tile in r:
-                if (types is None or isinstance(tile, types)) and tile.color==color:
+                if tile!=blank and (types is None or isinstance(tile, types)) and tile.color==color:
                     yield tile
 
     def get_loc_val(self, loc):
+        pc = self[loc]
         if self.empty(loc):
             return 0
+        elif isinstance(pc, King):
+            # this is only needed when calculating opponent_moves to determine if we are in check
+            return 999
         else:
             return piece_values[self[loc].__class__]
 
@@ -229,19 +233,19 @@ class Bishop(Piece):
     char = '♗'
 
     def moves(self):
-        return chain(self.line(mod) for mod in piece_moves['Bishop'])
+        return chain(*(self.line(mod) for mod in piece_moves['Bishop']))
 
 class Rook(Piece):
     char = '♖'
 
     def moves(self):
-        return chain(self.line(mod) for mod in piece_moves['Rook'])
+        return chain(*(self.line(mod) for mod in piece_moves['Rook']))
 
 class Queen(Piece):
     char = '♕'
 
     def moves(self):
-        return chain(self.line(mod) for mod in piece_moves['Queen'])
+        return chain(*(self.line(mod) for mod in piece_moves['Queen']))
 
 class Pawn(Piece):
     char = '♙'
@@ -272,7 +276,7 @@ class Knight(Piece):
 
     def moves(self):
         B = self.board
-        lst = [self.loc.modified(mod) for mod in knight_moves]
+        lst = [self.loc.modified(*mod) for mod in knight_moves]
         lst = self.remove_invalid(lst)
         lst = [Move(self, l, B.get_loc_val(l)) for l in lst]
         return lst
@@ -286,8 +290,11 @@ class King(Piece):
         B = self.board
         pc = B.all_pieces(color, (Knight, Bishop, Rook, Queen))
         pawns = B.all_pieces(color, (Pawn,))
-        moves = chain(a.moves() for a in pc)
-        pwn_moves = chain(pwn.moves() for pwn in pawns)
+
+        moves = list(chain(*(a.moves() for a in pc)))
+
+        # print("moves", moves)
+        pwn_moves = chain(*(pwn.moves() for pwn in pawns))
         all_moves = set(moves) | set(pwn_moves)
         if include_king:
             king = next(B.all_pieces(color, (King,)))
@@ -298,14 +305,16 @@ class King(Piece):
         king_moves = [king.loc.modified(*mod) for mod in piece_moves['King']]
         king_moves = king.remove_invalid(king_moves)
         king_moves = [Move(king, m) for m in king_moves]
+        # print("king_moves", king_moves)
         return set(king_moves)
 
     def opponent_moves(self):
         return self.all_moves(x_col(self.color))
 
     def in_check(self):
-        checks = [m.loc for m in self.opponent_moves()]
-        return [m for m in checks if m.loc==self.loc]
+        # checks = [m.loc for m in self.opponent_moves()]
+        # print("checks", checks)
+        return [m for m in self.opponent_moves() if m.loc==self.loc]
 
     def moves(self):
         loc = self.loc
@@ -325,7 +334,7 @@ class King(Piece):
         rook = self.board[a]
         isrook = isinstance(rook, Rook)
         line = self.line((-1,0))
-        if not set(line) & unavailable:
+        if line and not set(line) & unavailable:
             last = line[-1].loc.x
             if isrook and rook.orig_location and last==1:
                 lst.append(Move(self, l.modified(-2,0), related=Move(rook, l.modified(-1,0))))
@@ -334,7 +343,7 @@ class King(Piece):
         rook = self.board[a]
         isrook = isinstance(rook, Rook)
         line = self.line((1,0))
-        if not set(line) & unavailable:
+        if line and not set(line) & unavailable:
             last = line[-1].loc.x
             if isrook and rook.orig_location and last==6:
                 lst.append(Move(self, l.modified(2,0), related=Move(rook, l.modified(1,0))))
@@ -362,7 +371,7 @@ class Chess:
         """
         # try capture
         if len(in_check) == 1:
-            all_moves = self.all_moves(self.current)
+            all_moves = king.all_moves(self.current)
             capture = [m for m in all_moves if m.loc==in_check[0].loc]
             if capture:
                 return capture[0]
@@ -372,11 +381,11 @@ class Chess:
             ok = True
             if isinstance(in_check[0].piece, Knight):
                 ok = False
-            if self.loc.is_adjacent(in_check[0].loc):
+            if king.loc.is_adjacent(in_check[0].loc):
                 ok = False
             if ok:
-                all_moves = self.all_moves(self.current, include_king=False)
-                blocking = set(self.loc.between(in_check[0].loc))
+                all_moves = king.all_moves(self.current, include_king=False)
+                blocking = set(king.loc.between(in_check[0].loc))
                 blocking = [m for m in all_moves if m.loc in blocking]
                 if blocking:
                     return blocking[0]
@@ -394,10 +403,9 @@ class Chess:
         B = self.board
         while self.n <= self.n_max:
             pieces = B.all_pieces(self.current)
-            moves = []
-            for p in pieces:
-                for m in p.moves():
-                    moves.append((m, p))
+            # print("pieces[0].moves()", list(pieces)[0].moves())
+
+            moves = list(chain(*(list(p.moves()) for p in pieces)))
             king = self.kings[self.current]
             in_check = king.in_check()
             if in_check:
@@ -411,9 +419,15 @@ class Chess:
             B.move(moves[0])
             self.n += 1
             self.current = x_col(self.current)
-            B.display()
-            input('continue > ')
+            self.print_board()
+            inp = input('continue > ')
+            if inp=='q':
+                break
 
+    def print_board(self):
+        print(' ' + ' '.join('abcde'))
+        for r in reversed(list(self.board.display())):
+            print(r)
 
 piece_values = {
     Pawn: 1,
@@ -428,9 +442,10 @@ if __name__ == "__main__":
     b = Board(5)
     loc = Loc('c',3)
     l2 = Loc('c',5)
-    b.add(King, BLACK, l2)
+    b.add(King, BLACK, l2.modified(1,0))
+    b.add(Bishop, BLACK, l2)
     pc = b.add(King, WHITE, loc)
-    print(' ' + ' '.join('abcde'))
-    for r in reversed(list(b.display())):
-        print(r)
-    print("piece moves()", pc.moves())
+    chess = Chess(b)
+    if 1:
+        chess.loop()
+
