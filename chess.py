@@ -273,6 +273,10 @@ class Queen(Piece):
 class Pawn(Piece):
     char = '♙'
 
+    def attack_locs(self):
+        locs = self.loc.modified(1, self.dir), self.loc.modified(-1, self.dir)
+        return self.remove_invalid(locs)
+
     def moves(self, attacking_only=False):
         l = self.loc
         B = self.board
@@ -286,9 +290,7 @@ class Pawn(Piece):
                     line.pop()
                 moves.extend(line)
 
-        lst = l.modified(1, self.dir), l.modified(-1, self.dir)
-        lst = self.remove_invalid(lst)
-        for l in lst:
+        for l in self.attack_locs():
             piece = B[l]
             if piece!=blank and B[l].color != self.color:
                 moves.append(Move(self, l, B.get_loc_val(l)))
@@ -308,20 +310,25 @@ class Knight(Piece):
 class King(Piece):
     char = '♔'
 
-    def all_moves(self, color, include_king=True):
+    def all_moves(self, color, include_king=True, include_pawns=True):
         B = self.board
         pc = B.all_pieces(color, (Knight, Bishop, Rook, Queen))
-        pawns = B.all_pieces(color, (Pawn,))
 
-        moves = list(chain(a.moves() for a in pc))
+        all_moves = set(chain(a.moves() for a in pc))
 
-        # print("moves", moves)
-        pwn_moves = chain(pwn.moves() for pwn in pawns)
-        all_moves = set(moves) | set(pwn_moves)
+        if include_pawns:
+            pawns = B.all_pieces(color, (Pawn,))
+            pwn_moves = chain(pwn.moves() for pwn in pawns)
+            all_moves |= set(pwn_moves)
+
         if include_king:
             king = next(B.all_pieces(color, (King,)))
             all_moves |= self.get_king_moves(king)
         return all_moves
+
+    def pawn_attack_locs(self, color):
+        pawns = self.board.all_pieces(color, (Pawn,))
+        return set(chain(p.attack_locs() for p in pawns))
 
     def get_king_moves(self, king):
         king_moves = [king.loc.modified(*mod) for mod in piece_moves['King']]
@@ -331,11 +338,9 @@ class King(Piece):
         return set(king_moves)
 
     def opponent_moves(self):
-        return self.all_moves(x_col(self.color))
+        return self.all_moves(x_col(self.color), include_pawns=False)
 
     def in_check(self):
-        # checks = [m.loc for m in self.opponent_moves()]
-        # print("checks", checks)
         return [m for m in self.opponent_moves() if m.loc==self.loc]
 
     def moves(self, dbg=0, add_unavailable=None):
@@ -351,6 +356,7 @@ class King(Piece):
         if self.orig_location:
             lst = self.castling_moves(lst, unavailable)
         unavailable_locs = set(m.loc for m in unavailable)
+        unavailable_locs |= self.pawn_attack_locs(x_col(self.color))
         if add_unavailable:
             unavailable_locs |= add_unavailable
         if dbg: print(unavailable_locs)
@@ -404,7 +410,10 @@ class Chess:
         # try capture
         if len(in_check) == 1:
             all_moves = king.all_moves(self.current)
+            print("all_moves", all_moves)
+            print('==')
             capture = [m for m in all_moves if m.loc==in_check[0].loc]
+            print("capture", capture)
             if capture:
                 return capture[0]
 
