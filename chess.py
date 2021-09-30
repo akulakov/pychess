@@ -139,6 +139,9 @@ class Move:
     def __repr__(self):
         return f'<M {repr(self.loc)[1:-1]}>'
 
+    def do_move(self):
+        self.piece.move(self)
+
 class Board:
     def __init__(self, size):
         self.b = [row(size) for _ in range(size)]
@@ -233,8 +236,8 @@ class Piece:
         self.color = color
         self.dir = dir
 
-    def move(self, loc):
-        self.board.move(self.loc, loc)
+    def move(self, move):
+        self.board.move(move)
         self.orig_location = False
 
     def __repr__(self):
@@ -275,7 +278,8 @@ class Pawn(Piece):
         B = self.board
         moves = []
         if not attacking_only:
-            line = self.line((0, self.dir))[:2]
+            move_len = 2 if self.orig_location else 1
+            line = self.line((0, self.dir))[:move_len]
             if line:
                 last = line[-1]
                 if not B.empty(last.loc):
@@ -334,24 +338,30 @@ class King(Piece):
         # print("checks", checks)
         return [m for m in self.opponent_moves() if m.loc==self.loc]
 
-    def moves(self):
+    def moves(self, dbg=0, add_unavailable=None):
         loc = self.loc
         B = self.board
         lst = [loc.modified(*mod) for mod in piece_moves['King']]
         lst = self.remove_invalid(lst)
         lst = [Move(self, l, self.board.get_loc_val(l)) for l in lst]
+        if dbg: print(lst)
         unavailable = self.opponent_moves()
+        if dbg: print(unavailable)
 
         if self.orig_location:
             lst = self.castling_moves(lst, unavailable)
         unavailable_locs = set(m.loc for m in unavailable)
+        if add_unavailable:
+            unavailable_locs |= add_unavailable
+        if dbg: print(unavailable_locs)
+        if dbg: print( [m for m in lst if m.loc not in unavailable_locs] )
         return [m for m in lst if m.loc not in unavailable_locs]
 
     def castling_moves(self, lst, unavailable):
         loc = self.loc
         if loc not in (Loc(4,0), Loc(4,7)):
             # not a standard location, a puzzle game
-            return []
+            return lst
         a = Loc(0, loc.y)
         rook = self.board[a]
         isrook = isinstance(rook, Rook)
@@ -408,18 +418,34 @@ class Chess:
             if ok:
                 all_moves = king.all_moves(self.current, include_king=False)
                 blocking = set(king.loc.between(in_check[0].loc))
+                print("blocking", blocking)
                 blocking = [m for m in all_moves if m.loc in blocking]
+                print("2 blocking", blocking)
                 if blocking:
                     return blocking[0]
 
         # only king moves left
-        k_moves = king.moves()
+        unavailable = set()
+        for mv in in_check:
+            piece = mv.piece
+            mvloc = mv.loc
+            ploc = piece.loc
+            if isinstance(piece, (Queen, Rook, Bishop)):
+                mod_x = self.envelope(ploc.x - mvloc.x)
+                mod_y = self.envelope(ploc.y - mvloc.y)
+                unavailable.add(king.loc.modified(mod_x, mod_y))
+
+        k_moves = king.moves(dbg=1, add_unavailable=unavailable)
+        print("k_moves", k_moves)
         if k_moves:
             return k_moves[0]
         else:
             curc = 'White' if self.current==WHITE else 'Black'
             print(f'{curc} is checkmated')
             return
+
+    def envelope(self, val, low=-1, high=1):
+        return max(low, min(high, val))
 
     def loop(self):
         B = self.board
@@ -437,7 +463,8 @@ class Chess:
             else:
                 shuffle(moves)
             moves.sort()
-            B.move(moves[0])
+            m = moves[0]
+            m.do_move()
             self.n += 1
             self.current = x_col(self.current)
             self.print_board()
@@ -446,7 +473,7 @@ class Chess:
                 break
 
     def print_board(self):
-        print(' ' + ' '.join('abcde'))
+        print(' ' + ' '.join('abcdefgh'))
         for r in reversed(list(self.board.display())):
             print(r)
 
