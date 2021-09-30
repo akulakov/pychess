@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import itertools
-from random import shuffle
+from random import shuffle, random
 
 WHITE = 1
 BLACK = 2
@@ -142,6 +142,9 @@ class Move:
     def do_move(self):
         self.piece.move(self)
 
+PAWN_ODDS = 1
+DBG = 0
+
 class Board:
     def __init__(self, size):
         self.b = [row(size) for _ in range(size)]
@@ -153,8 +156,16 @@ class Board:
 
         if self.size == 8:
             for x in range(8):
-                add(Pawn, WHITE, Loc(x, 1), dir=1)
-                add(Pawn, BLACK, Loc(x, 6), dir=-1)
+                if 1:
+                    if random() < PAWN_ODDS:
+                        add(Pawn, WHITE, Loc(x, 1), dir=1)
+                    if random() < PAWN_ODDS:
+                        add(Pawn, BLACK, Loc(x, 6), dir=-1)
+            if DBG:
+                add(King, WHITE, Loc(3, 7))
+                add(King, BLACK, Loc(5, 7))
+                add(Queen, BLACK, Loc(0, 6))
+                add(Rook, BLACK, Loc(1, 5))
             for pc, x_locs in piece_locs.items():
                 for x in x_locs:
                     add(pc, WHITE, Loc(x, 0))
@@ -181,6 +192,9 @@ class Board:
             self.move(move.related)
 
     def is_valid(self, l):
+        print("l.x,l.y", l.x,l.y)
+        print( 0 <= l.x < self.size , 0<=l.y<self.size)
+        print( 0 <= l.x < self.size and 0<=l.y<self.size)
         return 0 <= l.x < self.size and 0<=l.y<self.size
 
     def remove_invalid(self, locs):
@@ -341,7 +355,6 @@ class King(Piece):
         moves = [king.loc.modified(*mod) for mod in piece_moves['King']]
         moves = king.remove_invalid(moves, include_defense=include_defense)
         moves = [Move(king, m) for m in moves]
-        # print("king_moves", king_moves)
         return set(moves)
 
     def opponent_moves(self):
@@ -359,7 +372,6 @@ class King(Piece):
         lst = [Move(self, l, self.board.get_loc_val(l)) for l in lst]
         if dbg: print(lst)
         unavailable = self.opponent_moves()
-        if dbg: print(unavailable)
 
         if self.orig_location:
             lst = self.castling_moves(lst, unavailable)
@@ -367,8 +379,6 @@ class King(Piece):
         unavailable_locs |= self.pawn_attack_locs(x_col(self.color))
         if add_unavailable:
             unavailable_locs |= add_unavailable
-        if dbg: print(unavailable_locs)
-        if dbg: print( [m for m in lst if m.loc not in unavailable_locs] )
         return [m for m in lst if m.loc not in unavailable_locs]
 
     def castling_moves(self, lst, unavailable):
@@ -417,11 +427,9 @@ class Chess:
         """
         # try capture
         if len(in_check) == 1:
-            all_moves = king.all_moves(self.current)
-            print("all_moves", all_moves)
-            print('==')
-            capture = [m for m in all_moves if m.loc==in_check[0].loc]
-            print("capture", capture)
+            all_moves = king.all_moves(self.current, include_king=False)
+            all_moves |= set(king.moves())
+            capture = [m for m in all_moves if m.loc==in_check[0].piece.loc]
             if capture:
                 return capture[0]
 
@@ -435,9 +443,7 @@ class Chess:
             if ok:
                 all_moves = king.all_moves(self.current, include_king=False)
                 blocking = set(king.loc.between(in_check[0].loc))
-                print("blocking", blocking)
                 blocking = [m for m in all_moves if m.loc in blocking]
-                print("2 blocking", blocking)
                 if blocking:
                     return blocking[0]
 
@@ -448,8 +454,8 @@ class Chess:
             mvloc = mv.loc
             ploc = piece.loc
             if isinstance(piece, (Queen, Rook, Bishop)):
-                mod_x = self.envelope(ploc.x - mvloc.x)
-                mod_y = self.envelope(ploc.y - mvloc.y)
+                mod_x = self.envelope(mvloc.x - ploc.x)
+                mod_y = self.envelope(mvloc.y - ploc.y)
                 unavailable.add(king.loc.modified(mod_x, mod_y))
 
         k_moves = king.moves(dbg=1, add_unavailable=unavailable)
@@ -466,6 +472,10 @@ class Chess:
 
     def loop(self):
         B = self.board
+        self.print_board()
+        inp = input('continue > ')
+        if inp=='q': return
+
         while self.n <= self.n_max:
             pieces = list(B.all_pieces(self.current))
 
@@ -486,8 +496,7 @@ class Chess:
             self.current = x_col(self.current)
             self.print_board()
             inp = input('continue > ')
-            if inp=='q':
-                break
+            if inp=='q': return
 
     def print_board(self):
         print(' ' + ' '.join('abcdefgh'))
@@ -507,9 +516,6 @@ if __name__ == "__main__":
     b = Board(8)
     loc = Loc('c',3)
     l2 = Loc('c',5)
-    # b.add(King, BLACK, l2.modified(1,0))
-    # b.add(Pawn, BLACK, l2, dir=-1)
-    # pc = b.add(King, WHITE, loc)
     b.place_standard()
     chess = Chess(b)
     if 1:
