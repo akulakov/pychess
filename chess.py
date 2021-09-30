@@ -193,7 +193,7 @@ class Board:
     def empty(self, loc):
         return self[loc]==blank
 
-    def line(self, piece, loc, mod, color):
+    def line(self, piece, loc, mod, color, include_defense=False):
         lst = []
         color = self[loc].color
         while 1:
@@ -201,7 +201,7 @@ class Board:
             if not self.is_valid(loc):
                 break
             if not self.empty(loc):
-                if color != self[loc].color:
+                if include_defense or color != self[loc].color:
                     lst.append(Move(piece, loc, self.get_loc_val(loc)))     # capture move
                 break
             else:
@@ -243,32 +243,38 @@ class Piece:
     def __repr__(self):
         return self.char if self.color==WHITE else piece_chars[self.char]
 
-    def line(self, dir):
-        return self.board.line(self, self.loc, dir, self.color)
+    def line(self, dir, include_defense=False):
+        return self.board.line(self, self.loc, dir, self.color, include_defense=include_defense)
 
-    def remove_invalid(self, locs):
+    def remove_invalid(self, locs, include_defense=False):
         B = self.board
         locs = B.remove_invalid(locs)
-        return [l for l in locs if B.empty(l) or self.color != B[l].color]
+        if include_defense:
+            return locs
+        else:
+            return [l for l in locs if B.empty(l) or self.color != B[l].color]
 
 
 class Bishop(Piece):
     char = '♗'
 
-    def moves(self):
-        return chain(self.line(mod) for mod in piece_moves['Bishop'])
+    def moves(self, include_defense=False):
+        return chain(self.line(mod, include_defense=include_defense)
+                     for mod in piece_moves['Bishop'])
 
 class Rook(Piece):
     char = '♖'
 
-    def moves(self):
-        return chain(self.line(mod) for mod in piece_moves['Rook'])
+    def moves(self, include_defense=False):
+        return chain(self.line(mod, include_defense=include_defense)
+                     for mod in piece_moves['Rook'])
 
 class Queen(Piece):
     char = '♕'
 
-    def moves(self):
-        return chain(self.line(mod) for mod in piece_moves['Queen'])
+    def moves(self, include_defense=False):
+        return chain(self.line(mod, include_defense=include_defense)
+                     for mod in piece_moves['Queen'])
 
 class Pawn(Piece):
     char = '♙'
@@ -277,7 +283,7 @@ class Pawn(Piece):
         locs = self.loc.modified(1, self.dir), self.loc.modified(-1, self.dir)
         return self.remove_invalid(locs)
 
-    def moves(self, attacking_only=False):
+    def moves(self, attacking_only=False, include_defense=False):
         l = self.loc
         B = self.board
         moves = []
@@ -292,17 +298,18 @@ class Pawn(Piece):
 
         for l in self.attack_locs():
             piece = B[l]
-            if piece!=blank and B[l].color != self.color:
+            if include_defense or piece!=blank and B[l].color != self.color:
                 moves.append(Move(self, l, B.get_loc_val(l)))
         return moves
 
 class Knight(Piece):
     char = '♘'
 
-    def moves(self):
+    def moves(self, include_defense=False):
         B = self.board
         lst = [self.loc.modified(*mod) for mod in knight_moves]
-        lst = self.remove_invalid(lst)
+
+        lst = self.remove_invalid(lst, include_defense=include_defense)
         lst = [Move(self, l, B.get_loc_val(l)) for l in lst]
         return lst
 
@@ -310,44 +317,45 @@ class Knight(Piece):
 class King(Piece):
     char = '♔'
 
-    def all_moves(self, color, include_king=True, include_pawns=True):
+    def all_moves(self, color, include_king=True, include_pawns=True, include_defense=False):
         B = self.board
         pc = B.all_pieces(color, (Knight, Bishop, Rook, Queen))
 
-        all_moves = set(chain(a.moves() for a in pc))
+        all_moves = set(chain(a.moves(include_defense=include_defense) for a in pc))
 
         if include_pawns:
             pawns = B.all_pieces(color, (Pawn,))
-            pwn_moves = chain(pwn.moves() for pwn in pawns)
+            pwn_moves = chain(pwn.moves(include_defense=include_defense) for pwn in pawns)
             all_moves |= set(pwn_moves)
 
         if include_king:
             king = next(B.all_pieces(color, (King,)))
-            all_moves |= self.get_king_moves(king)
+            all_moves |= self.get_king_moves(king, include_defense=include_defense)
         return all_moves
 
     def pawn_attack_locs(self, color):
         pawns = self.board.all_pieces(color, (Pawn,))
         return set(chain(p.attack_locs() for p in pawns))
 
-    def get_king_moves(self, king):
-        king_moves = [king.loc.modified(*mod) for mod in piece_moves['King']]
-        king_moves = king.remove_invalid(king_moves)
-        king_moves = [Move(king, m) for m in king_moves]
+    def get_king_moves(self, king, include_defense=False):
+        moves = [king.loc.modified(*mod) for mod in piece_moves['King']]
+        moves = king.remove_invalid(moves, include_defense=include_defense)
+        moves = [Move(king, m) for m in moves]
         # print("king_moves", king_moves)
-        return set(king_moves)
+        return set(moves)
 
     def opponent_moves(self):
-        return self.all_moves(x_col(self.color), include_pawns=False)
+        return self.all_moves(x_col(self.color), include_pawns=False, include_defense=True)
 
     def in_check(self):
         return [m for m in self.opponent_moves() if m.loc==self.loc]
 
-    def moves(self, dbg=0, add_unavailable=None):
+    def moves(self, dbg=0, add_unavailable=None, include_defense=False):
         loc = self.loc
         B = self.board
         lst = [loc.modified(*mod) for mod in piece_moves['King']]
-        lst = self.remove_invalid(lst)
+
+        lst = self.remove_invalid(lst, include_defense=include_defense)
         lst = [Move(self, l, self.board.get_loc_val(l)) for l in lst]
         if dbg: print(lst)
         unavailable = self.opponent_moves()
