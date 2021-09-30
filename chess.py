@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-from itertools import chain
+import itertools
+from random import shuffle
 
 WHITE = 1
 BLACK = 2
@@ -61,6 +62,9 @@ piece_moves = {
         ],
 
 }
+
+def chain(lst):
+    return itertools.chain(*lst)
 
 def x_col(color):
     return WHITE if color==BLACK else BLACK
@@ -139,6 +143,21 @@ class Board:
     def __init__(self, size):
         self.b = [row(size) for _ in range(size)]
         self.size = size
+
+    def place_standard(self):
+        add = self.add
+        piece_locs = {Rook: (0,7), Knight: (1,6), Bishop: (2,5), Queen: (3,), King: (4,)}
+
+        if self.size == 8:
+            for x in range(8):
+                add(Pawn, WHITE, Loc(x, 1), dir=1)
+                add(Pawn, BLACK, Loc(x, 6), dir=-1)
+            for pc, x_locs in piece_locs.items():
+                for x in x_locs:
+                    add(pc, WHITE, Loc(x, 0))
+            for pc, x_locs in piece_locs.items():
+                for x in x_locs:
+                    add(pc, BLACK, Loc(x, 7))
 
     def display(self):
         for r in self.b:
@@ -234,19 +253,19 @@ class Bishop(Piece):
     char = '♗'
 
     def moves(self):
-        return chain(*(self.line(mod) for mod in piece_moves['Bishop']))
+        return chain(self.line(mod) for mod in piece_moves['Bishop'])
 
 class Rook(Piece):
     char = '♖'
 
     def moves(self):
-        return chain(*(self.line(mod) for mod in piece_moves['Rook']))
+        return chain(self.line(mod) for mod in piece_moves['Rook'])
 
 class Queen(Piece):
     char = '♕'
 
     def moves(self):
-        return chain(*(self.line(mod) for mod in piece_moves['Queen']))
+        return chain(self.line(mod) for mod in piece_moves['Queen'])
 
 class Pawn(Piece):
     char = '♙'
@@ -256,7 +275,7 @@ class Pawn(Piece):
         B = self.board
         moves = []
         if not attacking_only:
-            line = self.line((0, self.dir))
+            line = self.line((0, self.dir))[:2]
             if line:
                 last = line[-1]
                 if not B.empty(last.loc):
@@ -268,7 +287,7 @@ class Pawn(Piece):
         for l in lst:
             piece = B[l]
             if piece!=blank and B[l].color != self.color:
-                moves.append(Move(self, l, get_loc_val(l)))
+                moves.append(Move(self, l, B.get_loc_val(l)))
         return moves
 
 class Knight(Piece):
@@ -281,7 +300,6 @@ class Knight(Piece):
         lst = [Move(self, l, B.get_loc_val(l)) for l in lst]
         return lst
 
-from random import shuffle
 
 class King(Piece):
     char = '♔'
@@ -291,10 +309,10 @@ class King(Piece):
         pc = B.all_pieces(color, (Knight, Bishop, Rook, Queen))
         pawns = B.all_pieces(color, (Pawn,))
 
-        moves = list(chain(*(a.moves() for a in pc)))
+        moves = list(chain(a.moves() for a in pc))
 
         # print("moves", moves)
-        pwn_moves = chain(*(pwn.moves() for pwn in pawns))
+        pwn_moves = chain(pwn.moves() for pwn in pawns)
         all_moves = set(moves) | set(pwn_moves)
         if include_king:
             king = next(B.all_pieces(color, (King,)))
@@ -330,23 +348,27 @@ class King(Piece):
         return [m for m in lst if m.loc not in unavailable_locs]
 
     def castling_moves(self, lst, unavailable):
-        a = Loc(0, self.loc.y)
+        loc = self.loc
+        if loc not in (Loc(4,0), Loc(4,7)):
+            # not a standard location, a puzzle game
+            return []
+        a = Loc(0, loc.y)
         rook = self.board[a]
         isrook = isinstance(rook, Rook)
         line = self.line((-1,0))
         if line and not set(line) & unavailable:
             last = line[-1].loc.x
             if isrook and rook.orig_location and last==1:
-                lst.append(Move(self, l.modified(-2,0), related=Move(rook, l.modified(-1,0))))
+                lst.append(Move(self, loc.modified(-2,0), related=Move(rook, loc.modified(-1,0))))
 
-        b = Loc(7, self.loc.y)
+        b = Loc(7, loc.y)
         rook = self.board[a]
         isrook = isinstance(rook, Rook)
         line = self.line((1,0))
         if line and not set(line) & unavailable:
             last = line[-1].loc.x
             if isrook and rook.orig_location and last==6:
-                lst.append(Move(self, l.modified(2,0), related=Move(rook, l.modified(1,0))))
+                lst.append(Move(self, loc.modified(2,0), related=Move(rook, loc.modified(1,0))))
         return lst
 
 
@@ -395,17 +417,16 @@ class Chess:
         if k_moves:
             return k_moves[0]
         else:
-            curc = 'White' if current==WHITE else 'Black'
+            curc = 'White' if self.current==WHITE else 'Black'
             print(f'{curc} is checkmated')
             return
 
     def loop(self):
         B = self.board
         while self.n <= self.n_max:
-            pieces = B.all_pieces(self.current)
-            # print("pieces[0].moves()", list(pieces)[0].moves())
+            pieces = list(B.all_pieces(self.current))
 
-            moves = list(chain(*(list(p.moves()) for p in pieces)))
+            moves = list(chain(p.moves() for p in pieces))
             king = self.kings[self.current]
             in_check = king.in_check()
             if in_check:
@@ -439,12 +460,13 @@ piece_values = {
 
 
 if __name__ == "__main__":
-    b = Board(5)
+    b = Board(8)
     loc = Loc('c',3)
     l2 = Loc('c',5)
-    b.add(King, BLACK, l2.modified(1,0))
-    b.add(Pawn, BLACK, l2, dir=-1)
-    pc = b.add(King, WHITE, loc)
+    # b.add(King, BLACK, l2.modified(1,0))
+    # b.add(Pawn, BLACK, l2, dir=-1)
+    # pc = b.add(King, WHITE, loc)
+    b.place_standard()
     chess = Chess(b)
     if 1:
         chess.loop()
