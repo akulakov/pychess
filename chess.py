@@ -4,9 +4,17 @@ from random import shuffle, random
 
 """
 - draw conditions (ins. mat; no moves)
-- en passant
-- defense by other pieces.
+
+en passant:
+    - move is created to move 2 tiles and has en_passant attr set
+    - move is performed and pawn en_passant attr is also set
+    - other pawn checks to right and left for en passant pawns
+    - capture move en_passant_capture is created
+    - if capture move is performed, tile in the opposite direction of pawn is checked and captured pawn is removed from
+    there
+    - at the end of loop (i.e. after any move is done), reset en passant state of all opposing pawns
 """
+
 
 WHITE = 1
 BLACK = 2
@@ -117,21 +125,23 @@ class Loc:
     def between(self, loc):
         if self.x==loc.x:
             a, b = self.y, loc.y
-            a, b = (a, b) if a<b else b, a
+            a, b = (a, b) if a<b else (b, a)
             return [Loc(self.x,y) for y in range(a+1,b+1)]
         if self.y==loc.y:
             a, b = self.x, loc.x
-            a, b = (a, b) if a<b else b, a
+            a, b = (a, b) if a<b else (b, a)
             return [Loc(x,self.y) for x in range(a+1,b+1)]
         # diagonal
         a, b = self.x, loc.x
-        a, b = a, b if a<b else b, a
+        a, b = (a, b) if a<b else (b, a)
         return [Loc(n,n) for n in range(a+1,b+1)]
 
 class Move:
-    def __init__(self, piece, loc, val=0, related=None):
+    def __init__(self, piece, loc, val=0, related=None, en_passant=False, en_passant_capture=False):
         self.piece, self.loc, self.val = piece, loc, val
         self.related = related
+        self.en_passant = en_passant
+        self.en_passant_capture = en_passant_capture
 
     def __lt__(self, o):
         if not isinstance(o, Move):
@@ -150,8 +160,12 @@ class Move:
 
     def do_move(self):
         self.piece.move(self)
+        if self.en_passant:
+            self.piece.en_passant = True
+        if self.en_passant_capture:
+            self.piece.do_en_passant_capture()
 
-DBG=1
+DBG=0
 class Board:
     def __init__(self, size):
         self.b = [row(size) for _ in range(size)]
@@ -163,7 +177,7 @@ class Board:
 
         if self.size == 8:
             for x in range(8):
-                if 0:
+                if 1:
                     if random() < PAWN_ODDS:
                         add(Pawn, WHITE, Loc(x, 1), dir=1)
                     if random() < PAWN_ODDS:
@@ -303,6 +317,15 @@ class Queen(Piece):
 
 class Pawn(Piece):
     char = '♙'
+    en_passant = False
+
+    def do_en_passant_capture(self):
+        loc = self.loc.modified(y=-self.dir)
+        pawn = self.board[loc]
+        if not isinstance(pawn, Pawn) or not pawn.en_passant:
+            print(f'Warning: {pawn} at {loc} is not valid for en passant capture')
+        else:
+            self.board[loc] = blank
 
     def attack_locs(self):
         locs = self.loc.modified(1, self.dir), self.loc.modified(-1, self.dir)
@@ -312,6 +335,7 @@ class Pawn(Piece):
         l = self.loc
         B = self.board
         moves = []
+
         if not attacking_only:
             move_len = 2 if self.orig_location else 1
             line = self.line((0, self.dir))[:move_len]
@@ -319,12 +343,19 @@ class Pawn(Piece):
                 last = line[-1]
                 if not B.empty(last.loc):
                     line.pop()
+                if len(line) == 2:
+                    line[-1].en_passant = True
                 moves.extend(line)
 
-        for l in self.attack_locs():
-            piece = B[l]
-            if include_defense or piece!=blank and B[l].color != self.color:
-                moves.append(Move(self, l, B.get_loc_val(l)))
+        for loc in self.attack_locs():
+            piece = B[loc]
+            if include_defense or piece!=blank and B[loc].color != self.color:
+                moves.append(Move(self, loc, B.get_loc_val(loc)))
+
+        en_passant_locs = self.remove_invalid((l.modified(1,0), l.modified(-1,0)))
+        en_passant_pawn = [B[l] for l in en_passant_locs if isinstance(B[l], Pawn) and B[l].en_passant]
+        if en_passant_pawn:
+            moves.append(Move(self, en_passant_pawn.loc.modified(y=self.dir), en_passant_capture=True, val=1))
         return moves
 
 class Knight(Piece):
@@ -473,7 +504,7 @@ class Chess:
                 mod_y = self.envelope(mvloc.y - ploc.y)
                 unavailable.add(king.loc.modified(mod_x, mod_y))
 
-        k_moves = king.moves(dbg=1, add_unavailable=unavailable)
+        k_moves = king.moves(dbg=0, add_unavailable=unavailable)
         if k_moves:
             return k_moves[0]
         else:
@@ -524,6 +555,11 @@ class Chess:
                     B[m.piece.loc] = m.piece
                 m.do_move()
                 break
+
+            # we had a chance to capture with en passant in this move; if we did not, reset en passant
+            opp_pawns = B.all_pieces(x_col(self.current), (Pawn,))
+            for p in opp_pawns:
+                p.en_passant = False
 
             self.n += 1
             self.current = x_col(self.current)
