@@ -176,7 +176,6 @@ class Move:
         if self.en_passant_capture:
             self.piece.do_en_passant_capture()
 
-DBG=0
 class Board:
     def __init__(self, size):
         self.b = [row(size) for _ in range(size)]
@@ -194,11 +193,11 @@ class Board:
                     if random() < PAWN_ODDS:
                         add(Pawn, BLACK, Loc(x, 6), dir=-1)
             if DBG:
-                add(King, BLACK, Loc(1, 1))
-                add(Bishop, BLACK, Loc(6, 4))
+                add(King, BLACK, Loc(0, 0))
 
-                add(King, WHITE, Loc(3, 1))
-                add(Rook, WHITE, Loc(5, 0))
+                add(King, WHITE, Loc(3, 2))
+                add(Bishop, WHITE, Loc(5, 1))
+                add(Bishop, WHITE, Loc(6, 1))
             else:
                 for pc, x_locs in piece_locs.items():
                     for x in x_locs:
@@ -565,6 +564,19 @@ class Chess:
                     B[m.piece.loc] = m.piece
                 m.do_move()
                 break
+            else:
+                print('Draw: no moves available')
+                return
+
+            a = list(B.all_pieces(self.current))
+            b = list(B.all_pieces(x_col(self.current)))
+            a,b = (a,b) if len(a)<=len(b) else (b,a)
+            if len(a)==1 and len(b) <= 3:
+                piece_types = [p.__class__ for p in b]
+                piece_types.remove(King)
+                if piece_types==[Knight] or piece_types==[Knight, Knight] or piece_types==[Bishop]:
+                    print('Draw: insufficient material')
+                    return
 
             # we had a chance to capture with en passant in this move; if we did not, reset en passant
             opp_pawns = B.all_pieces(x_col(self.current), (Pawn,))
