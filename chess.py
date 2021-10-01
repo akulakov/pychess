@@ -175,6 +175,8 @@ class Move:
             self.piece.en_passant = True
         if self.en_passant_capture:
             self.piece.do_en_passant_capture()
+        if self.piece.is_pawn:
+            self.piece.queen()
 
 class Board:
     def __init__(self, size):
@@ -196,8 +198,7 @@ class Board:
                 add(King, BLACK, Loc(0, 0))
 
                 add(King, WHITE, Loc(3, 2))
-                add(Bishop, WHITE, Loc(5, 1))
-                add(Bishop, WHITE, Loc(6, 1))
+                add(Pawn, WHITE, Loc(5, 1), dir=1)
             else:
                 for pc, x_locs in piece_locs.items():
                     for x in x_locs:
@@ -262,6 +263,12 @@ class Board:
                 if tile!=blank and (types is None or isinstance(tile, types)) and tile.color==color:
                     yield tile
 
+    def get_pawns(self, color):
+        return self.all_pieces(color, (Pawn,))
+
+    def get_king(self, color):
+        return next(self.all_pieces(color, (King,)))
+
     def get_loc_val(self, loc):
         pc = self[loc]
         if self.empty(loc):
@@ -302,27 +309,23 @@ class Piece:
     def value(self):
         return self.board.get_loc_val(self.loc)
 
+    def moves(self, include_defense=False):
+        mods = piece_moves[self.__class__.__name__]
+        return chain(self.line(mod, include_defense=include_defense) for mod in mods)
+
+    @property
+    def is_pawn(self):
+        return isinstance(self, Pawn)
+
 
 class Bishop(Piece):
     char = '♗'
 
-    def moves(self, include_defense=False):
-        return chain(self.line(mod, include_defense=include_defense)
-                     for mod in piece_moves['Bishop'])
-
 class Rook(Piece):
     char = '♖'
 
-    def moves(self, include_defense=False):
-        return chain(self.line(mod, include_defense=include_defense)
-                     for mod in piece_moves['Rook'])
-
 class Queen(Piece):
     char = '♕'
-
-    def moves(self, include_defense=False):
-        return chain(self.line(mod, include_defense=include_defense)
-                     for mod in piece_moves['Queen'])
 
 class Pawn(Piece):
     char = '♙'
@@ -337,7 +340,8 @@ class Pawn(Piece):
             self.board[loc] = blank
 
     def attack_locs(self):
-        locs = self.loc.modified(1, self.dir), self.loc.modified(-1, self.dir)
+        l = self.loc
+        locs = l.modified(1, self.dir), l.modified(-1, self.dir)
         return self.remove_invalid(locs)
 
     def moves(self, attacking_only=False, include_defense=False):
@@ -348,6 +352,8 @@ class Pawn(Piece):
         if not attacking_only:
             move_len = 2 if self.orig_location else 1
             line = self.line((0, self.dir))[:move_len]
+            print("self.dir", self.dir)
+            print("line", line)
             if line:
                 last = line[-1]
                 if not B.empty(last.loc):
@@ -364,8 +370,15 @@ class Pawn(Piece):
         en_passant_locs = self.remove_invalid((l.modified(1,0), l.modified(-1,0)))
         en_passant_pawn = [B[l] for l in en_passant_locs if isinstance(B[l], Pawn) and B[l].en_passant]
         if en_passant_pawn:
-            moves.append(Move(self, en_passant_pawn.loc.modified(y=self.dir), en_passant_capture=True, val=1))
+            loc = en_passant_pawn.loc
+            moves.append(Move(self, loc.modified(y=self.dir), en_passant_capture=True, val=1))
         return moves
+
+    def queen(self):
+        if self.loc.y in (0,7):
+            # though sometimes, tactically, it's beneficial to queen to some other piece, the AI is
+            # not good enough to make a decision at this level
+            self.board[self.loc] = Queen(self.board, self.color, self.loc)
 
 class Knight(Piece):
     char = '♘'
@@ -389,17 +402,16 @@ class King(Piece):
         all_moves = set(chain(a.moves(include_defense=include_defense) for a in pc))
 
         if include_pawns:
-            pawns = B.all_pieces(color, (Pawn,))
-            pwn_moves = chain(pwn.moves(include_defense=include_defense) for pwn in pawns)
+            pwn_moves = chain(pwn.moves(include_defense=include_defense)
+                              for pwn in B.get_pawns(color))
             all_moves |= set(pwn_moves)
 
         if include_king:
-            king = next(B.all_pieces(color, (King,)))
-            all_moves |= self.get_king_moves(king, include_defense=include_defense)
+            all_moves |= self.get_king_moves(B.get_king(color), include_defense=include_defense)
         return all_moves
 
     def pawn_attack_locs(self, color):
-        pawns = self.board.all_pieces(color, (Pawn,))
+        pawns = self.board.get_pawns(color)
         return set(chain(p.attack_locs() for p in pawns))
 
     def get_king_moves(self, king, include_defense=False):
@@ -468,8 +480,8 @@ class Chess:
 
     def __init__(self, board):
         self.board = board
-        w_king = list(board.all_pieces(WHITE, (King,)))[0]
-        b_king = list(board.all_pieces(BLACK, (King,)))[0]
+        w_king = board.get_king(WHITE)
+        b_king = board.get_king(BLACK)
         self.kings = {WHITE: w_king, BLACK: b_king}
 
     def handle_check(self, king, in_check, moves):
@@ -579,7 +591,7 @@ class Chess:
                     return
 
             # we had a chance to capture with en passant in this move; if we did not, reset en passant
-            opp_pawns = B.all_pieces(x_col(self.current), (Pawn,))
+            opp_pawns = B.get_pawns(x_col(self.current))
             for p in opp_pawns:
                 p.en_passant = False
 
