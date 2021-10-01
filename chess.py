@@ -144,7 +144,6 @@ class Loc:
             y1 += ymod
             lst.append(Loc(x,y1))
 
-        print("between lst", lst)
         return lst
 
 class Move:
