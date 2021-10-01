@@ -352,8 +352,6 @@ class Pawn(Piece):
         if not attacking_only:
             move_len = 2 if self.orig_location else 1
             line = self.line((0, self.dir))[:move_len]
-            print("self.dir", self.dir)
-            print("line", line)
             if line:
                 last = line[-1]
                 if not B.empty(last.loc):
@@ -379,6 +377,7 @@ class Pawn(Piece):
             # though sometimes, tactically, it's beneficial to queen to some other piece, the AI is
             # not good enough to make a decision at this level
             self.board[self.loc] = Queen(self.board, self.color, self.loc)
+
 
 class Knight(Piece):
     char = '♘'
@@ -417,8 +416,8 @@ class King(Piece):
     def get_king_moves(self, king, include_defense=False):
         moves = [king.loc.modified(*mod) for mod in piece_moves['King']]
         moves = king.remove_invalid(moves, include_defense=include_defense)
-        moves = [Move(king, m) for m in moves]
-        return set(moves)
+        moves = {Move(king, m) for m in moves}
+        return moves
 
     def opponent_moves(self):
         return self.all_moves(x_col(self.color), include_pawns=False, include_defense=True)
@@ -468,10 +467,6 @@ class King(Piece):
                 lst.append(Move(self, loc.modified(2,0), related=Move(rook, loc.modified(1,0))))
         return lst
 
-    def is_defended(self, piece):
-        moves = self.all_moves(piece.color, include_defense=True)
-        return piece.loc in set(m.loc for m in moves)
-
 
 class Chess:
     current = WHITE
@@ -503,18 +498,19 @@ class Chess:
         # try block
         if len(in_check) == 1:
             ok = True
-            if isinstance(in_check[0].piece, Knight):
+            piece = in_check[0].piece
+            if isinstance(piece, Knight):
                 ok = False
-            if king.loc.is_adjacent(in_check[0].piece.loc):
+            if king.loc.is_adjacent(piece.loc):
                 ok = False
             if ok:
                 all_moves = king.all_moves(self.current, include_king=False)
-                blocking = set(king.loc.between(in_check[0].piece.loc))
+                blocking = set(king.loc.between(piece.loc))
                 blocking = [m for m in all_moves if m.loc in blocking]
                 if blocking:
                     return blocking[0]
 
-        # only king moves left
+        # only king moves remain
         unavailable = set()
         for mv in in_check:
             piece = mv.piece
@@ -525,7 +521,7 @@ class Chess:
                 mod_y = self.envelope(mvloc.y - ploc.y)
                 unavailable.add(king.loc.modified(mod_x, mod_y))
 
-        k_moves = king.moves(dbg=1, add_unavailable=unavailable)
+        k_moves = king.moves(dbg=0, add_unavailable=unavailable)
         if k_moves:
             return k_moves[0]
         else:
@@ -553,8 +549,7 @@ class Chess:
                 if not move:
                     break
                 moves = [move]
-            else:
-                shuffle(moves)
+            shuffle(moves)
             opp_moves = king.opponent_moves()
             opp_move_locs = set(m.loc for m in opp_moves)
             opp_move_locs |= king.pawn_attack_locs(x_col(self.current))
@@ -580,6 +575,7 @@ class Chess:
                 print('Draw: no moves available')
                 return
 
+            # check for insufficient material
             a = list(B.all_pieces(self.current))
             b = list(B.all_pieces(x_col(self.current)))
             a,b = (a,b) if len(a)<=len(b) else (b,a)
