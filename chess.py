@@ -2,9 +2,18 @@
 import itertools
 from random import shuffle, random
 
+"""
+- draw conditions (ins. mat; no moves)
+- en passant
+- defense by other pieces.
+"""
+
 WHITE = 1
 BLACK = 2
 blank = '.'
+
+PAWN_ODDS = 0.3
+DBG = 0
 
 piece_chars = {
     '♖': '♜',
@@ -108,11 +117,11 @@ class Loc:
     def between(self, loc):
         if self.x==loc.x:
             a, b = self.y, loc.y
-            a, b = a, b if a<b else b, a
+            a, b = (a, b) if a<b else b, a
             return [Loc(self.x,y) for y in range(a+1,b+1)]
         if self.y==loc.y:
             a, b = self.x, loc.x
-            a, b = a, b if a<b else b, a
+            a, b = (a, b) if a<b else b, a
             return [Loc(x,self.y) for x in range(a+1,b+1)]
         # diagonal
         a, b = self.x, loc.x
@@ -142,9 +151,7 @@ class Move:
     def do_move(self):
         self.piece.move(self)
 
-PAWN_ODDS = 1
-DBG = 0
-
+DBG=1
 class Board:
     def __init__(self, size):
         self.b = [row(size) for _ in range(size)]
@@ -156,22 +163,25 @@ class Board:
 
         if self.size == 8:
             for x in range(8):
-                if 1:
+                if 0:
                     if random() < PAWN_ODDS:
                         add(Pawn, WHITE, Loc(x, 1), dir=1)
                     if random() < PAWN_ODDS:
                         add(Pawn, BLACK, Loc(x, 6), dir=-1)
             if DBG:
-                add(King, WHITE, Loc(3, 7))
-                add(King, BLACK, Loc(5, 7))
-                add(Queen, BLACK, Loc(0, 6))
-                add(Rook, BLACK, Loc(1, 5))
-            for pc, x_locs in piece_locs.items():
-                for x in x_locs:
-                    add(pc, WHITE, Loc(x, 0))
-            for pc, x_locs in piece_locs.items():
-                for x in x_locs:
-                    add(pc, BLACK, Loc(x, 7))
+                add(King, BLACK, Loc(3, 0))
+                add(Rook, BLACK, Loc(1, 7))
+                add(Rook, BLACK, Loc(1, 6))
+
+                add(King, WHITE, Loc(5, 7))
+                add(Rook, WHITE, Loc(4, 5))
+            else:
+                for pc, x_locs in piece_locs.items():
+                    for x in x_locs:
+                        add(pc, WHITE, Loc(x, 0))
+                for pc, x_locs in piece_locs.items():
+                    for x in x_locs:
+                        add(pc, BLACK, Loc(x, 7))
 
     def display(self):
         for r in self.b:
@@ -192,9 +202,6 @@ class Board:
             self.move(move.related)
 
     def is_valid(self, l):
-        print("l.x,l.y", l.x,l.y)
-        print( 0 <= l.x < self.size , 0<=l.y<self.size)
-        print( 0 <= l.x < self.size and 0<=l.y<self.size)
         return 0 <= l.x < self.size and 0<=l.y<self.size
 
     def remove_invalid(self, locs):
@@ -267,6 +274,10 @@ class Piece:
             return locs
         else:
             return [l for l in locs if B.empty(l) or self.color != B[l].color]
+
+    @property
+    def value(self):
+        return self.board.get_loc_val(self.loc)
 
 
 class Bishop(Piece):
@@ -405,6 +416,10 @@ class King(Piece):
                 lst.append(Move(self, loc.modified(2,0), related=Move(rook, loc.modified(1,0))))
         return lst
 
+    def is_defended(self, piece):
+        moves = self.all_moves(piece.color, include_defense=True)
+        return piece.loc in set(m.loc for m in moves)
+
 
 class Chess:
     current = WHITE
@@ -438,11 +453,11 @@ class Chess:
             ok = True
             if isinstance(in_check[0].piece, Knight):
                 ok = False
-            if king.loc.is_adjacent(in_check[0].loc):
+            if king.loc.is_adjacent(in_check[0].piece.loc):
                 ok = False
             if ok:
                 all_moves = king.all_moves(self.current, include_king=False)
-                blocking = set(king.loc.between(in_check[0].loc))
+                blocking = set(king.loc.between(in_check[0].piece.loc))
                 blocking = [m for m in all_moves if m.loc in blocking]
                 if blocking:
                     return blocking[0]
@@ -459,7 +474,6 @@ class Chess:
                 unavailable.add(king.loc.modified(mod_x, mod_y))
 
         k_moves = king.moves(dbg=1, add_unavailable=unavailable)
-        print("k_moves", k_moves)
         if k_moves:
             return k_moves[0]
         else:
@@ -489,9 +503,28 @@ class Chess:
                 moves = [move]
             else:
                 shuffle(moves)
+            opp_moves = king.opponent_moves()
+            opp_move_locs = set(m.loc for m in opp_moves)
+            opp_move_locs |= king.pawn_attack_locs(x_col(self.current))
+            for m in moves:
+                if m.loc in opp_move_locs:
+                    m.val -= m.piece.value
+
             moves.sort()
-            m = moves[0]
-            m.do_move()
+            for m in moves:
+                # we don't need this check if king is moving because king would not move under check
+                # and also don't need it if king is in check because then the move is blocking the check
+                # (otherwise the blocking move would be skipped when we test for `in_check()` below)
+                if not isinstance(m.piece, King) and not king.in_check():
+                    # determine if the move exposes the king
+                    B[m.piece.loc] = blank
+                    if king.in_check():
+                        B[m.piece.loc] = m.piece
+                        continue
+                    B[m.piece.loc] = m.piece
+                m.do_move()
+                break
+
             self.n += 1
             self.current = x_col(self.current)
             self.print_board()
