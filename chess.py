@@ -3,7 +3,7 @@ import itertools
 from random import shuffle, random
 
 """
-- draw conditions (ins. mat; no moves)
+Chess
 
 en passant:
     - move is created to move 2 tiles and has en_passant attr set
