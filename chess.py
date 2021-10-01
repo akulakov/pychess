@@ -612,11 +612,8 @@ piece_values = {
 
 
 if __name__ == "__main__":
-    b = Board(8)
-    loc = Loc('c',3)
-    l2 = Loc('c',5)
-    b.place_standard()
-    chess = Chess(b)
-    if 1:
-        chess.loop()
+    board = Board(8)
+    board.place_standard()
+    chess = Chess(board)
+    chess.loop()
 
