@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import itertools
-from random import shuffle, random
+from random import shuffle, random, choice
 
 """
 Chess
@@ -22,6 +22,7 @@ blank = '.'
 
 PAWN_ODDS = 0.3
 DBG = 0
+RANDOMIZED_CHESS = 0
 
 piece_chars = {
     '♖': '♜',
@@ -177,6 +178,13 @@ class Move:
         if self.piece.is_pawn:
             self.piece.queen()
 
+
+def getrand(locs):
+    val = choice(locs)
+    locs.remove(val)
+    return val
+
+
 class Board:
     def __init__(self, size):
         self.b = [row(size) for _ in range(size)]
@@ -186,9 +194,18 @@ class Board:
         add = self.add
         piece_locs = {Rook: (0,7), Knight: (1,6), Bishop: (2,5), Queen: (3,), King: (4,)}
 
+        if RANDOMIZED_CHESS:
+            locs = list(range(8))
+            rook = getrand(locs), getrand(locs)
+            knight = getrand(locs), getrand(locs)
+            bishop = getrand(locs), getrand(locs)
+            queen = (getrand(locs),)
+            king = (locs[0],)
+            piece_locs = {Rook: rook, Knight: knight, Bishop: bishop, Queen: queen, King: king}
+
         if self.size == 8:
             for x in range(8):
-                if 1:
+                if not DBG:
                     if random() < PAWN_ODDS:
                         add(Pawn, WHITE, Loc(x, 1), dir=1)
                     if random() < PAWN_ODDS:
@@ -197,7 +214,8 @@ class Board:
                 add(King, BLACK, Loc(0, 0))
 
                 add(King, WHITE, Loc(3, 2))
-                add(Pawn, WHITE, Loc(5, 1), dir=1)
+                add(Pawn, WHITE, Loc(6, 3), dir=-1)
+                add(Pawn, BLACK, Loc(5, 1), dir=1)
             else:
                 for pc, x_locs in piece_locs.items():
                     for x in x_locs:
@@ -344,6 +362,7 @@ class Pawn(Piece):
         return self.remove_invalid(locs)
 
     def moves(self, attacking_only=False, include_defense=False):
+        assert self.dir in (1,-1), "Pawns need to have a direction set"
         l = self.loc
         B = self.board
         moves = []
@@ -367,7 +386,7 @@ class Pawn(Piece):
         en_passant_locs = self.remove_invalid((l.modified(1,0), l.modified(-1,0)))
         en_passant_pawn = [B[l] for l in en_passant_locs if isinstance(B[l], Pawn) and B[l].en_passant]
         if en_passant_pawn:
-            loc = en_passant_pawn.loc
+            loc = en_passant_pawn[0].loc
             moves.append(Move(self, loc.modified(y=self.dir), en_passant_capture=True, val=1))
         return moves
 
