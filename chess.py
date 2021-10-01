@@ -132,9 +132,20 @@ class Loc:
             a, b = (a, b) if a<b else (b, a)
             return [Loc(x,self.y) for x in range(a+1,b+1)]
         # diagonal
-        a, b = self.x, loc.x
-        a, b = (a, b) if a<b else (b, a)
-        return [Loc(n,n) for n in range(a+1,b+1)]
+        x1, y1 = self
+        x2, y2 = loc
+        if x1>x2:
+            x1,x2 = x2,x1
+            y1,y2 = y2,y1
+
+        lst = []
+        ymod = 1 if y1<y2 else -1
+        for x in range(x1+1, x2):
+            y1 += ymod
+            lst.append(Loc(x,y1))
+
+        print("between lst", lst)
+        return lst
 
 class Move:
     def __init__(self, piece, loc, val=0, related=None, en_passant=False, en_passant_capture=False):
@@ -183,12 +194,11 @@ class Board:
                     if random() < PAWN_ODDS:
                         add(Pawn, BLACK, Loc(x, 6), dir=-1)
             if DBG:
-                add(King, BLACK, Loc(3, 0))
-                add(Rook, BLACK, Loc(1, 7))
-                add(Rook, BLACK, Loc(1, 6))
+                add(King, BLACK, Loc(1, 1))
+                add(Bishop, BLACK, Loc(6, 4))
 
-                add(King, WHITE, Loc(5, 7))
-                add(Rook, WHITE, Loc(4, 5))
+                add(King, WHITE, Loc(3, 1))
+                add(Rook, WHITE, Loc(5, 0))
             else:
                 for pc, x_locs in piece_locs.items():
                     for x in x_locs:
@@ -504,7 +514,7 @@ class Chess:
                 mod_y = self.envelope(mvloc.y - ploc.y)
                 unavailable.add(king.loc.modified(mod_x, mod_y))
 
-        k_moves = king.moves(dbg=0, add_unavailable=unavailable)
+        k_moves = king.moves(dbg=1, add_unavailable=unavailable)
         if k_moves:
             return k_moves[0]
         else:
