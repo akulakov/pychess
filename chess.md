@@ -20,6 +20,7 @@ character representing an empty board tile:
 
 And next the Board class and a helper function to create rows:
 
+```python
     def row(size):
         return [blank] * size
 
@@ -34,6 +35,7 @@ And next the Board class and a helper function to create rows:
 
         def __setitem__(self, loc, item):
             self.b[loc.y][loc.x] = item
+```
 
 I will start by making a small 3x3 board and displaying it:
 
