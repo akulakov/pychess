@@ -16,8 +16,8 @@ en passant:
 """
 
 
-WHITE = 1
-BLACK = 2
+WHITE = 'White'
+BLACK = 'Black'
 blank = '.'
 
 PAWN_ODDS = 0.3
@@ -89,6 +89,12 @@ def x_col(color):
 
 def row(size):
     return [blank] * size
+
+def getrand(locs):
+    val = choice(locs)
+    locs.remove(val)
+    return val
+
 
 class Loc:
     def __init__(self, x, y):
@@ -177,12 +183,6 @@ class Move:
             self.piece.do_en_passant_capture()
         if self.piece.is_pawn:
             self.piece.queen()
-
-
-def getrand(locs):
-    val = choice(locs)
-    locs.remove(val)
-    return val
 
 
 class Board:
@@ -543,8 +543,7 @@ class Chess:
         if k_moves:
             return k_moves[0]
         else:
-            curc = 'White' if self.current==WHITE else 'Black'
-            print(f'{curc} is checkmated')
+            print(f'{self.current} is checkmated')
             return
 
     def envelope(self, val, low=-1, high=1):
