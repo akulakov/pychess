@@ -135,7 +135,6 @@ class Move:
         B[self.piece.loc] = self.piece
         B[self.loc] = self.taken or blank   # taken may be None
 
-
 class Board:
     def __init__(self, size):
         self.b = [row(size) for _ in range(size)]
@@ -165,8 +164,8 @@ class Board:
                 add(King, BLACK, Loc(0, 0))
 
                 add(King, WHITE, Loc(3, 2))
-                add(Pawn, WHITE, Loc(6, 3), dir=-1)
-                add(Pawn, BLACK, Loc(5, 1), dir=1)
+                add(Queen, WHITE, Loc(6, 3))
+                add(Rook, WHITE, Loc(6, 4))
             else:
                 for pc, x_locs in piece_locs.items():
                     for x in x_locs:
@@ -429,7 +428,9 @@ class King(Piece):
 
         if self.orig_location and not in_check:
             lst = self.castling_moves(lst, unavailable)
-        return list(set(lst) - unavailable)
+        un_locs = set(m.loc for m in unavailable)
+        lst = [m for m in lst if m.loc not in un_locs]
+        return lst
 
     def castling_moves(self, lst, unavailable):
         loc = self.loc
