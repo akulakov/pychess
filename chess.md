@@ -57,12 +57,11 @@ I will need a Piece class that will have shared logic for all pieces:
 
 ```python
 class Piece:
-    def __init__(self, board, color, loc, dir=None):
+    def __init__(self, board, color, loc):
         self.loc = loc
         self.board = board
         self.orig_location = True
         self.color = color
-        self.dir = dir
 
 def __repr__(self):
     return self.char if self.color==WHITE else piece_chars[self.char]
@@ -97,12 +96,23 @@ class Loc:
 Location class makes it a bit more convenient to add locations using standard chess notation.
 The `__iter__` method yield two values that can be assigned to x,y variables: `x,y = location`.
 
+I am now ready to add the first piece subclass:
+
 ```python
 class Pawn(Piece):
     char = '♙'
+    dir = None
+
+    def __init__(self, *args, **kwargs):
+        self.dir = kwargs.pop('dir')
+        assert self.dir in (1,-1), "Pawns need to have a direction set"
+        super().__init__(*args, **kwargs)
 
 board[Loc(0,0)] = Pawn()
 ```
+
+As only pawns have directional movement based on their color, the `__init__()` method sets
+the custom `dir` attribute.
 
 To print the board to the terminal, I will use a small helper function:
 
@@ -321,7 +331,8 @@ A few things to explain here: `include_defense` can be set to include pseudo-mov
 our own pieces; this is useful when calculating opponent moves because the opponent may not
 want to capture pieces that are defended.
 
-Calculating values of moves that capture pieces relies on this lookup table:
+Calculating values of moves that capture pieces relies on this lookup table (note that this
+dictionary is used by `Board.get_loc_val()`):
 
 ```python
 piece_values = {
@@ -333,8 +344,8 @@ piece_values = {
 }
 ```
 
-And finally we can have the `moves()` method that works like a charm for the Rooks, Bishops and
-the Queen:
+And finally we can add the `moves()` method that works well for the Rooks, Bishops and the
+Queen:
 
 ```python
 import itertools
@@ -348,4 +359,302 @@ def moves(self, include_defense=False):
     return chain(self.line(mod, include_defense=include_defense) for mod in mods)
 ```
 
+The `chain()` method combines multiple iterables into a single iterable; in this case we want
+to combine multiple "lines" into a single iterable of all available moves.
 
+Move modifiers are looked up using the name of the piece class.
+
+And now I can add the classes for all three pieces:
+
+```python
+class Bishop(Piece):
+    char = '♗'
+
+class Rook(Piece):
+    char = '♖'
+
+class Queen(Piece):
+    char = '♕'
+```
+
+The moves are looked up based on the name of the class. I think it's quite neat that all three
+pieces can be defined with just a single line class and without any custom logic!
+
+To prepare for the next, I'll add the `remove_invalid()` methods first:
+
+```python
+# Board
+def remove_invalid(self, locs):
+    return [l for l in locs if self.is_valid(l)]
+
+
+# Piece
+def remove_invalid(self, locs, include_defense=False):
+    B = self.board
+    locs = B.remove_invalid(locs)
+    if include_defense:
+        return locs
+    else:
+        return [l for l in locs if B.empty(l) or self.color != B[l].color]
+```
+
+At the level of board, it makes sense to remove everything that doesn't fit into the board, and
+at the level of piece, I may also remove locations with my own pieces because I can't move on
+top of them.
+
+The knight moves differ from the pieces we've already added in that it jumps over obstacles and
+does not move in a line:
+
+```python
+class Knight(Piece):
+    char = '♘'
+
+    def moves(self, include_defense=False):
+        B = self.board
+        lst = [self.loc.modified(*mod) for mod in piece_moves['Knight']]
+
+        lst = self.remove_invalid(lst, include_defense=include_defense)
+        lst = [Move(self, l, B.get_loc_val(l)) for l in lst]
+        return lst
+```
+
+The logic is similar to `line()`, except that we do the "jump" based on modifiers only once
+rather than until bumping into an obstacle.
+
+Of Kings and Pawns
+===
+
+If you thought that Kings and Pawns are about as easy to add as the other pieces, prepare to be
+surprised! The king is especially tricky, perhaps three times more complicated than all other
+pieces combined, -- and so I will start with the Pawns.
+
+As a side note, it's curious that the most complexity in chess rules comes from the weakest
+(individually) pieces and the most crucial piece in the game.
+
+I will start by cheating a bit, if you don't mind: I will add queening logic that turns the
+fully advanced pawn into a Queen, rather than carefully choosing the best Piece in the
+circumstances. In some positions, a Knight may result in checkmate even as a Queen loses the
+game. In others, a Queen may result in a draw while a Rook will win you the game.
+
+For now, I will simply create a Queen as that's what you want in vast majority of cases:
+
+```python
+# Board
+def add(self, piece_cls, color, loc, dir=None):
+    kwargs = {'dir':dir} if dir else {}
+    self[loc] = piece_cls(self, color, loc, **kwargs)
+    return self[loc]
+
+# Piece
+def queen(self):
+    if self.loc.y in (0,7):
+        self.board.add(Queen, self.color, self.loc)
+```
+
+Note that adding a piece at a location in effect replaces any existing pieces.
+
+Next I will add the capture moves:
+
+
+```python
+def attack_locs(self):
+    return self.remove_invalid((
+        self.loc.modified(1, self.dir),
+        self.loc.modified(-1, self.dir)
+        ))
+
+def moves(self, normal=True, capture=True, defense=False):
+    """
+    normal - forward moves
+    capture - capture opponent piece
+    defense - defend friendly piece
+    """
+    l = self.loc
+    B = self.board
+    moves = []
+
+    if normal:
+        move_len = 2 if self.orig_location else 1
+        line = self.line((0, self.dir))[:move_len]
+        if line:
+            last = line[-1]
+            if not B.empty(last.loc):
+                line.pop()
+            if len(line) == 2:
+                line[-1].en_passant = True
+            moves.extend(line)
+
+    for loc in self.attack_locs():
+        piece = B[loc]
+        if defense or (piece!=blank and B[loc].color != self.color and capture):
+            moves.append(Move(self, loc, B.get_loc_val(loc)))
+    return moves
+```
+
+There are a couple of interesting things that happen here: first, I can reuse the `line()`
+logic to make either a single or double move depending on the pawn's original location. If I
+can do a double move, I take the first two moves of a line, otherwise I take only the first
+move.
+
+Second, I have to consider that pawns have three types of moves: normal, capture moves and
+defense "pseudo-moves", as described above in the docstring. When I am making a move with my
+own pawn, I can choose normal or capture moves and ignore defense moves.
+
+On the other hand, when the opponent is moving, the AI needs to consider capture moves and
+defense "pseudo-moves", while ignoring normal moves, as such moves don't offer immediate
+threat, and this simple AI does not consider more remote threats.
+
+I've used the term 'pseudo-moves' for defense because it was more convenient to implement them
+as moves as they need to record the effective piece and the target location just like the
+`Move` class, with the exception that the piece is not allowed to move to that location.
+
+To complete the pawn functionality we need to consider how to approach the /en passant/ rule.
+It needs to apply when certain conditions are met over the course of two opposing moves: first
+move needs to be a two-space jump, the opposing pawn needs to end up to the right or left of
+our pawn, and finally our pawn needs to choose the move that jumps to the normal attack tile
+and removes the opposing pawn.
+
+The subtle detail is that it's only a one-time opportunity: if you don't capture, you lose this
+option on the next move.
+
+To track en passant state, I will add the state and `do_move()` logic to the `Move` class:
+
+```python
+class Board:
+    ...
+
+    @property
+    def is_pawn(self):
+        return isinstance(self, Pawn)
+
+    @property
+    def is_king(self):
+        return isinstance(self, King)
+
+class Move:
+    def __init__(self, piece, loc, val=0, related=None, en_passant=False, en_passant_capture=False):
+        self.piece, self.loc, self.val = piece, loc, val
+        self.related = related
+        self.en_passant = en_passant
+        self.en_passant_capture = en_passant_capture
+
+    def do_move(self):
+        self.piece.move(self)
+        if self.en_passant:
+            self.piece.en_passant = True
+        if self.en_passant_capture:
+            self.piece.do_en_passant_capture()
+        if self.piece.is_pawn:
+            self.piece.queen()
+
+    ...
+```
+
+.. and to the pawn:
+
+```python
+class Pawn(Piece):
+    char = '♙'
+    en_passant = False
+    dir = None
+
+    def do_en_passant_capture(self):
+        loc = self.loc.modified(y=-self.dir)
+        pawn = self.board[loc]
+        if not isinstance(pawn, Pawn) or not pawn.en_passant:
+            print(f'Warning: {pawn} at {loc} is not valid for en passant capture')
+        else:
+            self.board[loc] = blank
+
+    def moves(self, normal=True, capture=True, defense=False):
+        ...
+
+        en_passant_locs = self.remove_invalid((l.modified(1,0), l.modified(-1,0)))
+        en_passant_pawn = [B[l] for l in en_passant_locs
+                if isinstance(B[l], Pawn) and B[l].en_passant]
+        if en_passant_pawn:
+            loc = en_passant_pawn[0].loc
+            moves.append(Move(self, loc.modified(y=self.dir), en_passant_capture=True, val=1))
+        return moves
+
+    ...
+```
+
+Note that when capturing, the target pawn is "behind" my pawn so I get it by reversing the
+direction from my new location.
+
+The King
+===
+
+Most of the complexity of this chess program is in the logic related to checks. To start with
+something a bit easier, I will add the castling moves first:
+
+
+```python
+def castling_moves(self, lst, unavailable):
+    loc = self.loc
+    if loc not in (Loc(4,0), Loc(4,7)):
+        # not a standard location, a puzzle game
+        return lst
+    a = Loc(0, loc.y)
+    rook = self.board[a]
+    isrook = isinstance(rook, Rook)
+    line = self.line((-1,0))
+    if line and not set(line) & unavailable:
+        last = line[-1].loc.x
+        if isrook and rook.orig_location and last==1:
+            lst.append(Move(self, loc.modified(-2,0), related=Move(rook, loc.modified(-1,0))))
+
+    ...
+```
+
+This method will only run when king is not in check and in the original location. The set of
+tiles under attack is provided in `unavailable` and will prevent castling to that side. Note
+that you can do `a & b` to check if sets `a` and `b` have any locations in common.
+
+This is a unique type of move that moves a second piece at the same time, which is easily
+handled in the `move()` method:
+
+```python
+# Piece
+def move(self, move):
+    ...
+    if move.related:
+        self.move(move.related)
+```
+
+To allow sets of locations to be compared using the `&` operator, I also add these two methods
+to `Loc`:
+
+```python
+# Loc
+def __hash__(self):
+    return hash(tuple(self))
+
+def __eq__(self, other):
+    return isinstance(other, Loc) and tuple(other) == tuple(self)
+```
+
+The first of these allows me to add custom objects to sets and the second treats all locations
+with the same x,y coordinates as equal; otherwise two custom objects are considered unequal
+and so `Loc(1,1) == Loc(1,1)` would be evaluated as `False`.
+
+The king `moves()` method is quite complex:
+
+
+def moves(self, add_unavailable=None, include_defense=False, in_check=False):
+    loc = self.loc
+    B = self.board
+    lst = [loc.modified(*mod) for mod in piece_moves['King']]
+
+    lst = self.remove_invalid(lst, include_defense=include_defense)
+    lst = [Move(self, l, self.board.get_loc_val(l)) for l in lst]
+    unavailable = self.opponent_moves()
+
+    if self.orig_location and not in_check:
+        lst = self.castling_moves(lst, unavailable)
+    unavailable_locs = set(m.loc for m in unavailable)
+    unavailable_locs |= self.pawn_attack_locs(x_col(self.color))
+    if add_unavailable:
+        unavailable_locs |= add_unavailable
+    return [m for m in lst if m.loc not in unavailable_locs]

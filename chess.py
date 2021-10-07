@@ -5,7 +5,7 @@ from random import shuffle, random, choice
 """
 Chess
 
-en passant:
+En passant:
     - move is created to move 2 tiles and has en_passant attr set
     - move is performed and pawn en_passant attr is also set
     - other pawn checks to right and left for en passant pawns
@@ -20,7 +20,7 @@ WHITE = 'White'
 BLACK = 'Black'
 blank = '.'
 
-PAWN_ODDS = 0.3
+PAWN_ODDS = 1
 DBG = 0
 RANDOMIZED_CHESS = 0
 
@@ -33,18 +33,18 @@ piece_chars = {
     '♕': '♛',
 }
 
-knight_moves = [
-    (2, 1),
-    (2, -1),
-    (-2, 1),
-    (-2, -1),
-    (1, 2),
-    (1, -2),
-    (-1, 2),
-    (-1, -2),
-]
-
 piece_moves = {
+    'Knight': [
+        (2, 1),
+        (2, -1),
+        (-2, 1),
+        (-2, -1),
+        (1, 2),
+        (1, -2),
+        (-1, 2),
+        (-1, -2),
+    ],
+
     'Rook': [
             (1, 0), (-1, 0),
             (0, 1), (0, -1)
@@ -263,15 +263,21 @@ class Board:
             if not self.is_valid(loc):
                 break
             if not self.empty(loc):
-                if include_defense or color != self[loc].color:
+                target = self[loc]
+                if include_defense or color != target.color:
                     lst.append(Move(piece, loc, self.get_loc_val(loc)))     # capture move
+                    if target.is_king:
+                        loc = loc.modified(*mod)
+                        if self.is_valid(loc):
+                            lst.append(Move(piece, loc))
                 break
             else:
                 lst.append(Move(piece, loc))
         return lst
 
     def add(self, piece_cls, color, loc, dir=None):
-        self[loc] = piece_cls(self, color, loc, dir)
+        kwargs = {'dir':dir} if dir else {}
+        self[loc] = piece_cls(self, color, loc, **kwargs)
         return self[loc]
 
     def all_pieces(self, color, types=None):
@@ -297,12 +303,11 @@ class Board:
             return piece_values[self[loc].__class__]
 
 class Piece:
-    def __init__(self, board, color, loc, dir=None):
+    def __init__(self, board, color, loc):
         self.loc = loc
         self.board = board
         self.orig_location = True
         self.color = color
-        self.dir = dir
 
     def move(self, move):
         self.board.move(move)
@@ -334,6 +339,10 @@ class Piece:
     def is_pawn(self):
         return isinstance(self, Pawn)
 
+    @property
+    def is_king(self):
+        return isinstance(self, King)
+
 
 class Bishop(Piece):
     char = '♗'
@@ -347,6 +356,12 @@ class Queen(Piece):
 class Pawn(Piece):
     char = '♙'
     en_passant = False
+    dir = None
+
+    def __init__(self, *args, **kwargs):
+        self.dir = kwargs.pop('dir')
+        assert self.dir in (1,-1), "Pawns need to have a direction set"
+        super().__init__(*args, **kwargs)
 
     def do_en_passant_capture(self):
         loc = self.loc.modified(y=-self.dir)
@@ -357,17 +372,22 @@ class Pawn(Piece):
             self.board[loc] = blank
 
     def attack_locs(self):
-        l = self.loc
-        locs = l.modified(1, self.dir), l.modified(-1, self.dir)
-        return self.remove_invalid(locs)
+        return self.remove_invalid((
+            self.loc.modified(1, self.dir),
+            self.loc.modified(-1, self.dir)
+            ))
 
-    def moves(self, attacking_only=False, include_defense=False):
-        assert self.dir in (1,-1), "Pawns need to have a direction set"
+    def moves(self, normal=True, capture=True, defense=False):
+        """
+        normal - forward moves
+        capture - capture opponent piece
+        defense - defend friendly piece
+        """
         l = self.loc
         B = self.board
         moves = []
 
-        if not attacking_only:
+        if normal:
             move_len = 2 if self.orig_location else 1
             line = self.line((0, self.dir))[:move_len]
             if line:
@@ -380,7 +400,7 @@ class Pawn(Piece):
 
         for loc in self.attack_locs():
             piece = B[loc]
-            if include_defense or piece!=blank and B[loc].color != self.color:
+            if defense or (piece!=blank and B[loc].color != self.color and capture):
                 moves.append(Move(self, loc, B.get_loc_val(loc)))
 
         en_passant_locs = self.remove_invalid((l.modified(1,0), l.modified(-1,0)))
@@ -394,7 +414,7 @@ class Pawn(Piece):
         if self.loc.y in (0,7):
             # though sometimes, tactically, it's beneficial to queen to some other piece, the AI is
             # not good enough to make a decision at this level
-            self.board[self.loc] = Queen(self.board, self.color, self.loc)
+            self.board.add(Queen, self.color, self.loc)
 
 
 class Knight(Piece):
@@ -402,7 +422,7 @@ class Knight(Piece):
 
     def moves(self, include_defense=False):
         B = self.board
-        lst = [self.loc.modified(*mod) for mod in knight_moves]
+        lst = [self.loc.modified(*mod) for mod in piece_moves['Knight']]
 
         lst = self.remove_invalid(lst, include_defense=include_defense)
         lst = [Move(self, l, B.get_loc_val(l)) for l in lst]
@@ -419,9 +439,14 @@ class King(Piece):
         all_moves = set(chain(a.moves(include_defense=include_defense) for a in pc))
 
         if include_pawns:
-            pwn_moves = chain(pwn.moves(include_defense=include_defense)
-                              for pwn in B.get_pawns(color))
-            all_moves |= set(pwn_moves)
+            pawn_moves = []
+            for pawn in B.get_pawns(color):
+                if include_defense:
+                    moves = pawn.moves(normal=False, capture=True, defense=True)
+                else:
+                    moves = pawn.moves(normal=True, capture=True, defense=False)
+                pawn_moves.extend(moves)
+            all_moves |= set(pawn_moves)
 
         if include_king:
             all_moves |= self.get_king_moves(B.get_king(color), include_defense=include_defense)
@@ -443,7 +468,7 @@ class King(Piece):
     def in_check(self):
         return [m for m in self.opponent_moves() if m.loc==self.loc]
 
-    def moves(self, dbg=0, add_unavailable=None, include_defense=False):
+    def moves(self, dbg=0, include_defense=False, in_check=False):
         loc = self.loc
         B = self.board
         lst = [loc.modified(*mod) for mod in piece_moves['King']]
@@ -453,12 +478,9 @@ class King(Piece):
         if dbg: print(lst)
         unavailable = self.opponent_moves()
 
-        if self.orig_location:
+        if self.orig_location and not in_check:
             lst = self.castling_moves(lst, unavailable)
         unavailable_locs = set(m.loc for m in unavailable)
-        unavailable_locs |= self.pawn_attack_locs(x_col(self.color))
-        if add_unavailable:
-            unavailable_locs |= add_unavailable
         return [m for m in lst if m.loc not in unavailable_locs]
 
     def castling_moves(self, lst, unavailable):
@@ -528,22 +550,11 @@ class Chess:
                 if blocking:
                     return blocking[0]
 
-        # only king moves remain
-        unavailable = set()
-        for mv in in_check:
-            piece = mv.piece
-            mvloc = mv.loc
-            ploc = piece.loc
-            if isinstance(piece, (Queen, Rook, Bishop)):
-                mod_x = self.envelope(mvloc.x - ploc.x)
-                mod_y = self.envelope(mvloc.y - ploc.y)
-                unavailable.add(king.loc.modified(mod_x, mod_y))
-
-        k_moves = king.moves(dbg=0, add_unavailable=unavailable)
+        k_moves = king.moves(in_check=True)
         if k_moves:
             return k_moves[0]
         else:
-            print(f'{self.current} is checkmated')
+            print(f'{self.current} is Checkmated!')
             return
 
     def envelope(self, val, low=-1, high=1):
