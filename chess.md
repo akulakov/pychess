@@ -56,6 +56,7 @@ It should display:
 I will need a Piece class that will have shared logic for all pieces:
 
 ```python
+
 class Piece:
     def __init__(self, board, color, loc):
         self.loc = loc
@@ -64,14 +65,13 @@ class Piece:
         self.color = color
 
 def __repr__(self):
-    return self.char if self.color==WHITE else piece_chars[self.char]
+    char = piece_data[self.__class__][1]
+    return char[0 if self.color==WHITE else 1]
 ```
 
 The `dir` attribute is only used by pawns, but it was a bit more convenient to add it to this
 class.  The `orig_location` is used by pawns (for the two-space jump) and rooks and the king --
 for castling.
-
-I will add `piece_chars` dictionary a bit later for black pieces.
 
 Pieces will use the location objects to keep track of their place:
 
@@ -100,7 +100,6 @@ I am now ready to add the first piece subclass:
 
 ```python
 class Pawn(Piece):
-    char = '♙'
     dir = None
 
     def __init__(self, *args, **kwargs):
@@ -188,6 +187,77 @@ The pawn is moving up one square, which means on the XY coordinates, the `x` wil
 and the `y` will be increased by 1. To make this sort of modifications more convenient, I'm
 adding the `modified()` method that creates and returns a new location object.
 
+Now is a good time to add all data related to pieces: values, display characters and move
+modifiers:
+
+```python
+piece_data = {
+    # piece value, display characters, move modifiers
+    Pawn: (1, ('♙', '♟︎'), []),
+
+    Knight: (3,
+       ('♘', '♞'),
+       [
+        (2, 1),
+        (2, -1),
+        (-2, 1),
+        (-2, -1),
+        (1, 2),
+        (1, -2),
+        (-1, 2),
+        (-1, -2),
+    ]),
+
+    Rook: (5,
+           ('♖', '♜'),
+            [
+            (1, 0), (-1, 0),
+            (0, 1), (0, -1)
+            ]
+          ),
+
+    King: (
+        -1,
+        ('♔', '♚'),
+        [
+        (1, 0),
+        (-1, 0),
+        (0, 1),
+        (0, -1),
+        (1, 1),
+        (1, -1),
+        (-1, 1),
+        (-1, -1)
+    ]),
+
+
+    Queen: (
+        9,
+        ('♕', '♛'),
+        [
+            (1, 0),
+            (-1, 0),
+            (0, 1),
+            (0, -1),
+            (1, 1),
+            (1, -1),
+            (-1, 1),
+            (-1, -1)
+    ]),
+
+    Bishop: (
+        3,
+        ('♗', '♝'),
+        [
+        (1, 1),
+        (1, -1),
+        (-1, 1),
+        (-1, -1)
+        ]),
+
+}
+```
+
 I can now display the board, move the pawn and display it again:
 
 ```python
@@ -215,12 +285,11 @@ modifiers, with four tuples for four cardinal directions:
 
 
 ```python
-piece_moves = {
-    'Rook': [
-            (1, 0), (-1, 0),
-            (0, 1), (0, -1)
-            ],
-}
+# piece_data
+[
+(1, 0), (-1, 0),
+(0, 1), (0, -1)
+],
 ```
 
 If this doesn't look clear enough, you can also represent directional modifiers with named
@@ -231,60 +300,11 @@ class Dir:
     right = 1, 0
     up = 0, 1
     ...
-'Rook': [Dir.right, Dir.up, Dir.left, Dir.down]
+[Dir.right, Dir.up, Dir.left, Dir.down]
 ```
 
 I've used modifier tuples however, and I kept move modifer tuples for all pieces in the same
-structure, to keep logic and data nicely separated:
-
-```python
-piece_moves = {
-    'Knight': [
-        (2, 1),
-        (2, -1),
-        (-2, 1),
-        (-2, -1),
-        (1, 2),
-        (1, -2),
-        (-1, 2),
-        (-1, -2),
-    ],
-
-    'Rook': [
-            (1, 0), (-1, 0),
-            (0, 1), (0, -1)
-            ],
-
-    'King': [
-        (1, 0),
-        (-1, 0),
-        (0, 1),
-        (0, -1),
-        (1, 1),
-        (1, -1),
-        (-1, 1),
-        (-1, -1)
-    ],
-
-    'Queen': [
-        (1, 0),
-        (-1, 0),
-        (0, 1),
-        (0, -1),
-        (1, 1),
-        (1, -1),
-        (-1, 1),
-        (-1, -1)
-    ],
-
-    'Bishop': [
-        (1, 1),
-        (1, -1),
-        (-1, 1),
-        (-1, -1)
-        ],
-}
-```
+structure, to keep logic and data nicely separated -- see the piece_data structure above.
 
 Bishop, Queen and Rook moves are so similar that they can be done in the same method that will
 live in the `Piece` class.
@@ -309,7 +329,7 @@ def get_loc_val(self, loc):
         # this is only needed when calculating opponent_moves to determine if we are in check
         return 999
     else:
-        return piece_values[self[loc].__class__]
+        return piece_data[self[loc].__class__][0]
 
 def line(self, piece, loc, mod, color, include_defense=False):
     lst = []
@@ -331,18 +351,7 @@ A few things to explain here: `include_defense` can be set to include pseudo-mov
 our own pieces; this is useful when calculating opponent moves because the opponent may not
 want to capture pieces that are defended.
 
-Calculating values of moves that capture pieces relies on this lookup table (note that this
-dictionary is used by `Board.get_loc_val()`):
-
-```python
-piece_values = {
-    Pawn: 1,
-    Bishop: 3,
-    Knight: 3,
-    Rook: 5,
-    Queen: 9,
-}
-```
+Calculating values of moves that capture pieces relies on `piece_data` structure.
 
 And finally we can add the `moves()` method that works well for the Rooks, Bishops and the
 Queen:
@@ -355,7 +364,7 @@ def chain(lst):
 
 # Piece
 def moves(self, include_defense=False):
-    mods = piece_moves[self.__class__.__name__]
+    mods = piece_data[self.__class__][2]
     return chain(self.line(mod, include_defense=include_defense) for mod in mods)
 ```
 
@@ -368,17 +377,17 @@ And now I can add the classes for all three pieces:
 
 ```python
 class Bishop(Piece):
-    char = '♗'
+    pass
 
 class Rook(Piece):
-    char = '♖'
+    pass
 
 class Queen(Piece):
-    char = '♕'
+    pass
 ```
 
 The moves are looked up based on the name of the class. I think it's quite neat that all three
-pieces can be defined with just a single line class and without any custom logic!
+pieces can be defined with just a class name!
 
 To prepare for the next, I'll add the `remove_invalid()` methods first:
 
@@ -407,11 +416,9 @@ does not move in a line:
 
 ```python
 class Knight(Piece):
-    char = '♘'
-
     def moves(self, include_defense=False):
         B = self.board
-        lst = [self.loc.modified(*mod) for mod in piece_moves['Knight']]
+        lst = [self.loc.modified(*mod) for mod in piece_data[Knight][2]]
 
         lst = self.remove_invalid(lst, include_defense=include_defense)
         lst = [Move(self, l, B.get_loc_val(l)) for l in lst]
@@ -554,7 +561,6 @@ class Move:
 
 ```python
 class Pawn(Piece):
-    char = '♙'
     en_passant = False
     dir = None
 
@@ -639,13 +645,12 @@ The first of these allows me to add custom objects to sets and the second treats
 with the same x,y coordinates as equal; otherwise two custom objects are considered unequal
 and so `Loc(1,1) == Loc(1,1)` would be evaluated as `False`.
 
-The king `moves()` method is quite complex:
+The `King.moves()` method is similar to `Knight.moves()`:
 
-
-def moves(self, add_unavailable=None, include_defense=False, in_check=False):
+```python
+def moves(self, include_defense=False, in_check=False):
     loc = self.loc
-    B = self.board
-    lst = [loc.modified(*mod) for mod in piece_moves['King']]
+    lst = [loc.modified(*mod) for mod in piece_data[King][2]]
 
     lst = self.remove_invalid(lst, include_defense=include_defense)
     lst = [Move(self, l, self.board.get_loc_val(l)) for l in lst]
@@ -653,8 +658,52 @@ def moves(self, add_unavailable=None, include_defense=False, in_check=False):
 
     if self.orig_location and not in_check:
         lst = self.castling_moves(lst, unavailable)
-    unavailable_locs = set(m.loc for m in unavailable)
-    unavailable_locs |= self.pawn_attack_locs(x_col(self.color))
-    if add_unavailable:
-        unavailable_locs |= add_unavailable
-    return [m for m in lst if m.loc not in unavailable_locs]
+    return list(set(lst) - unavailable)
+```
+
+The king cannot move under check or capture a defended piece, -- to calculate valid king moves,
+I have to look at all opposing moves, including pawn attack moves and opposing king moves.
+
+The following method needs a few extra arguments because it is reused later in other logic.
+
+```python
+def x_col(color):
+    return WHITE if color==BLACK else BLACK
+
+# King
+def all_moves(self, color, include_king=True, include_pawns=True, include_defense=False):
+    B = self.board
+    pc = B.all_pieces(color, (Knight, Bishop, Rook, Queen))
+
+    all_moves = set(chain(a.moves(include_defense=include_defense) for a in pc))
+
+    if include_pawns:
+        pawn_moves = []
+        for pawn in B.get_pawns(color):
+            if include_defense:
+                moves = pawn.moves(normal=False, capture=True, defense=True)
+            else:
+                moves = pawn.moves(normal=True, capture=True, defense=False)
+            pawn_moves.extend(moves)
+        all_moves |= set(pawn_moves)
+
+    if include_king:
+        all_moves |= self.get_king_moves(B.get_king(color), include_defense=include_defense)
+    return all_moves
+
+def get_king_moves(self, king, include_defense=False):
+    locs = [king.loc.modified(*mod) for mod in piece_data[King][2]]
+    locs = king.remove_invalid(moves, include_defense=include_defense)
+    moves = {Move(king, m) for m in locs}
+    return moves
+
+def opponent_moves(self):
+    return self.all_moves(x_col(self.color), include_pawns=False, include_defense=True)
+```
+
+Note the logic above that handles pawn moves, discussed in more detail when we were adding
+`Pawn.moves()`. It could be implemented by passing `include_defense` directly to `Pawn.moves()`
+but that would be confusing because it would be unclear why "forward" moves are not included
+with `include_defense=True`.
+
+
