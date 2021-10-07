@@ -938,3 +938,12 @@ def place_standard(self):
 
 That's all. I'm sure I missed a few issues in the tutorial, please let me know if you find an
 error or missing code.
+
+P.S. If you wish to play against the AI, you can simply add an `input()` statement at the start
+of the game loop that chooses the move and check it against valid moves, and continue to the
+start of the loop if it's invalid. You can also add some logic that guesses the best move based
+on the piece you selected with x,y notation, or to choose the best move automatically with an
+option to override it when you see a particularly strong move.
+
+The next step would be to use a module like *Curses* or *Tkinter*, or a 3rd party package like
+*PyGame* to add a nicer UI interface.
