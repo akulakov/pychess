@@ -120,13 +120,20 @@ class Move:
         return f'<M {repr(self.loc)[1:-1]}>'
 
     def do_move(self):
-        self.piece.move(self)
+        self.taken = self.piece.move(self)
         if self.en_passant:
             self.piece.en_passant = True
         if self.en_passant_capture:
-            self.piece.do_en_passant_capture()
+            taken = self.piece.do_en_passant_capture()
+            if taken!=blank:
+                self.taken = taken
         if self.piece.is_pawn:
             self.piece.queen()
+
+    def revert(self):
+        B = self.piece.board
+        B[self.piece.loc] = self.piece
+        B[self.loc] = self.taken
 
 
 class Board:
@@ -180,11 +187,13 @@ class Board:
 
     def move(self, move):
         a, b = move.piece.loc, move.loc
+        taken = self[b]
         self[b] = self[a]
         self[a] = blank
         move.piece.loc = b
         if move.related:
             self.move(move.related)
+        return taken
 
     def is_valid(self, l):
         return 0 <= l.x < self.size and 0<=l.y<self.size
@@ -314,6 +323,7 @@ class Pawn(Piece):
             print(f'Warning: {pawn} at {loc} is not valid for en passant capture')
         else:
             self.board[loc] = blank
+        return pawn
 
     def attack_locs(self):
         return self.remove_invalid((
@@ -453,9 +463,7 @@ class Chess:
 
     def __init__(self, board):
         self.board = board
-        w_king = board.get_king(WHITE)
-        b_king = board.get_king(BLACK)
-        self.kings = {WHITE: w_king, BLACK: b_king}
+        self.kings = {WHITE: board.get_king(WHITE), BLACK: board.get_king(BLACK)}
 
     def handle_check(self, king, in_check, moves):
         """
@@ -495,9 +503,6 @@ class Chess:
             print(f'{self.current} is Checkmated!')
             return
 
-    def envelope(self, val, low=-1, high=1):
-        return max(low, min(high, val))
-
     def loop(self):
         B = self.board
         self.print_board()
@@ -518,24 +523,22 @@ class Chess:
             shuffle(moves)
             opp_moves = king.opponent_moves()
             opp_move_locs = set(m.loc for m in opp_moves)
-            opp_move_locs |= king.pawn_attack_locs(x_col(self.current))
             for m in moves:
                 if m.loc in opp_move_locs:
                     m.val -= m.piece.value
-
             moves.sort()
-            for m in moves:
+
+            for move in moves:
                 # we don't need this check if king is moving because king would not move under check
                 # and also don't need it if king is in check because then the move is blocking the check
                 # (otherwise the blocking move would be skipped when we test for `in_check()` below)
-                if not isinstance(m.piece, King) and not king.in_check():
+                if not isinstance(move.piece, King) and not king.in_check():
                     # determine if the move exposes the king
-                    B[m.piece.loc] = blank
+                    move.do_move()
                     if king.in_check():
-                        B[m.piece.loc] = m.piece
+                        move.revert()
                         continue
-                    B[m.piece.loc] = m.piece
-                m.do_move()
+                move.do_move()
                 break
             else:
                 print('Draw: no moves available')
@@ -544,7 +547,7 @@ class Chess:
             # check for insufficient material
             a = list(B.all_pieces(self.current))
             b = list(B.all_pieces(x_col(self.current)))
-            a,b = (a,b) if len(a)<=len(b) else (b,a)
+            a,b = sorted([a,b], key=len)
             if len(a)==1 and len(b) <= 3:
                 piece_types = [p.__class__ for p in b]
                 piece_types.remove(King)
@@ -569,6 +572,7 @@ class Chess:
             print(r)
 
 piece_data = {
+    # piece value, display characters, move modifiers
     Pawn: (1, ('♙', '♟︎'), []),
 
     Knight: (3,

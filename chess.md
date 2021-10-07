@@ -6,7 +6,7 @@ This guide will show how to make a simple chess implementation in Python.
 I will start by making a game board, a few game pieces and allowing them to move according to the
 chess rules.
 
-The complete source code (about 600 lines) is here: chess.py
+The complete source code (about 600 lines) is here: [chess.py](chess.py)
 
 I will also use a class that represents a location on the game board.
 
@@ -546,11 +546,13 @@ class Move:
         self.en_passant_capture = en_passant_capture
 
     def do_move(self):
-        self.piece.move(self)
+        self.taken = self.piece.move(self)
         if self.en_passant:
             self.piece.en_passant = True
         if self.en_passant_capture:
-            self.piece.do_en_passant_capture()
+            taken = self.piece.do_en_passant_capture()
+            if taken!=blank:
+                self.taken = taken
         if self.piece.is_pawn:
             self.piece.queen()
 
@@ -618,7 +620,9 @@ This method will only run when king is not in check and in the original location
 tiles under attack is provided in `unavailable` and will prevent castling to that side. Note
 that you can do `a & b` to check if sets `a` and `b` have any locations in common.
 
-This is a unique type of move that moves a second piece at the same time, which is easily
+The shown snippet only castles to the left; the right-side castling is done in the same way.
+
+Castling is a unique type of move that moves a second piece at the same time, which is easily
 handled in the `move()` method:
 
 ```python
@@ -670,6 +674,10 @@ The following method needs a few extra arguments because it is reused later in o
 def x_col(color):
     return WHITE if color==BLACK else BLACK
 
+# Board
+def get_king(self, color):
+    return next(self.all_pieces(color, (King,)))
+
 # King
 def all_moves(self, color, include_king=True, include_pawns=True, include_defense=False):
     B = self.board
@@ -706,4 +714,227 @@ Note the logic above that handles pawn moves, discussed in more detail when we w
 but that would be confusing because it would be unclear why "forward" moves are not included
 with `include_defense=True`.
 
+Game loop
+===
 
+The game loop is responsible for displaying the board, switching moves from white to black, and
+testing for "check" condition and the game end, and finding moves that escape check. First, we
+set up the main class:
+
+```python
+class Chess:
+    current = WHITE
+    n = 0
+    n_max = 300
+
+    def __init__(self, board):
+        self.board = board
+        self.kings = {WHITE: board.get_king(WHITE), BLACK: board.get_king(BLACK)}
+```
+
+The `loop()` method is quite large, I will split up the code listing and the first part will be
+below, generating all moves, handling check condition and updating move values based on
+opponent's attack possibilities. For instance, if moving a queen into a tile will result in a
+loss of Queen, the move value is set to -9, which makes it very unlikely to be played.
+
+```python
+# King
+def in_check(self):
+    return [m for m in self.opponent_moves() if m.loc==self.loc]
+
+# Chess
+def loop(self):
+    B = self.board
+    self.print_board()
+    inp = input('continue > ')
+    if inp=='q': return
+
+    while self.n <= self.n_max:
+        pieces = list(B.all_pieces(self.current))
+
+        moves = list(chain(p.moves() for p in pieces))
+        king = self.kings[self.current]
+        in_check = king.in_check()
+        if in_check:
+            move = self.handle_check(king, in_check, moves)
+            if not move:
+                break
+            moves = [move]
+        shuffle(moves)
+        opp_moves = king.opponent_moves()
+        opp_move_locs = set(m.loc for m in opp_moves)
+        for m in moves:
+            if m.loc in opp_move_locs:
+                m.val -= m.piece.value
+        moves.sort()
+```
+
+Note that it's not enough to say we are in check; we have to know how many and which pieces are
+delivering the check because that affects valid defense moves. For example, you can't evade
+check from two attackers by capturing or blocking one of them.
+
+The `handle_check()` method will try to capture the attacker, block the attack, or move the
+piece, in this order.
+
+```python
+def handle_check(self, king, in_check, moves):
+    """
+    capture: single attacker, by any piece
+    block: single attacker, not a knight, at least one tile between; any piece except for king
+    king move: always
+    -
+    multi attack: only king move
+    """
+    # try capture
+    if len(in_check) == 1:
+        all_moves = king.all_moves(self.current, include_king=False)
+        all_moves |= set(king.moves())
+        capture = [m for m in all_moves if m.loc==in_check[0].piece.loc]
+        if capture:
+            return capture[0]
+
+    # try block
+    if len(in_check) == 1:
+        ok = True
+        piece = in_check[0].piece
+        if isinstance(piece, Knight):
+            ok = False
+        if king.loc.is_adjacent(piece.loc):
+            ok = False
+        if ok:
+            all_moves = king.all_moves(self.current, include_king=False)
+            blocking = set(king.loc.between(piece.loc))
+            blocking = [m for m in all_moves if m.loc in blocking]
+            if blocking:
+                return blocking[0]
+
+    k_moves = king.moves(in_check=True)
+    if k_moves:
+        return k_moves[0]
+    else:
+        print(f'{self.current} is Checkmated!')
+        return
+```
+
+There are some interesting details that come up in this method: note that we cannot block the
+Knight or adjacent piece's attack, and the king cannot move itself to create a block. We also
+need to use the `in_check` arg to make sure the crafty king doesn't try to castle out of a
+check. It would seem like a clever idea to try, but unfortunately the rules do not allow it!
+
+If there are no moves, we are obviously still in check and, sadly, checkmated!
+
+Continuing the loop and checking for draw:
+
+```python
+# Move
+def revert(self):
+    B = self.piece.board
+    B[self.piece.loc] = self.piece
+    B[self.loc] = self.taken
+
+
+# while loop
+...
+for move in moves:
+    # we don't need this check if king is moving because king would not move under check
+    # and also don't need it if king is in check because then the move is blocking the check
+    # (otherwise the blocking move would be skipped when we test for `in_check()` below)
+    if not isinstance(move.piece, King) and not king.in_check():
+        # determine if the move exposes the king
+        move.do_move()
+        if king.in_check():
+            move.revert()
+            continue
+    move.do_move()
+    break
+else:
+    print('Draw: no moves available')
+    return
+```
+
+Note the comment and that we of course can't make the move that leaves our king in check.
+
+Insufficient material also results in draw:
+
+```python
+# while loop
+...
+# check for insufficient material
+a = list(B.all_pieces(self.current))
+b = list(B.all_pieces(x_col(self.current)))
+a,b = sorted([a,b], key=len)
+if len(a)==1 and len(b) <= 3:
+    piece_types = [p.__class__ for p in b]
+    piece_types.remove(King)
+    if piece_types==[Knight] or piece_types==[Knight, Knight] or piece_types==[Bishop]:
+        print('Draw: insufficient material')
+        return
+```
+
+There are slightly different rules for this test but most common seems to be that one or two
+knights, or a single bishop, are not enough to give checkmate even if you are a genius.
+
+Do you still remember /en passant/? I haven't forgotten, I have the reset logic right here at
+the end of the loop:
+
+```python
+# while loop
+...
+# we had a chance to capture with en passant in this move; if we did not, reset en passant
+opp_pawns = B.get_pawns(x_col(self.current))
+for p in opp_pawns:
+    p.en_passant = False
+
+self.n += 1
+self.current = x_col(self.current)
+self.print_board()
+inp = input('continue > ')
+if inp=='q': return
+```
+
+And of course we have to change the current player and display the board.
+
+Finally, before starting a game, we need to arrange all of the pieces on the board:
+
+```python
+from random import choice, random
+DBG = False
+RANDOMIZED_CHESS = False
+
+def getrand(locs):
+    val = choice(locs)
+    locs.remove(val)
+    return val
+
+# Board
+def place_standard(self):
+    add = self.add
+    piece_locs = {Rook: (0,7), Knight: (1,6), Bishop: (2,5), Queen: (3,), King: (4,)}
+
+    if RANDOMIZED_CHESS:
+        locs = list(range(8))
+        rook = getrand(locs), getrand(locs)
+        knight = getrand(locs), getrand(locs)
+        bishop = getrand(locs), getrand(locs)
+        queen = (getrand(locs),)
+        king = (locs[0],)
+        piece_locs = {Rook: rook, Knight: knight, Bishop: bishop, Queen: queen, King: king}
+
+    if self.size == 8:
+        for x in range(8):
+            add(Pawn, WHITE, Loc(x, 1), dir=1)
+            add(Pawn, BLACK, Loc(x, 6), dir=-1)
+        if DBG:
+            add(King, BLACK, Loc(0, 0))
+            add(King, WHITE, Loc(3, 2))
+        else:
+            for pc, x_locs in piece_locs.items():
+                for x in x_locs:
+                    add(pc, WHITE, Loc(x, 0))
+            for pc, x_locs in piece_locs.items():
+                for x in x_locs:
+                    add(pc, BLACK, Loc(x, 7))
+```
+
+That's all. I'm sure I missed a few issues in the tutorial, please let me know if you find an
+error or missing code.
