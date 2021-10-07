@@ -133,7 +133,7 @@ class Move:
     def revert(self):
         B = self.piece.board
         B[self.piece.loc] = self.piece
-        B[self.loc] = self.taken
+        B[self.loc] = self.taken or blank   # taken may be None
 
 
 class Board:
@@ -533,12 +533,13 @@ class Chess:
                 # and also don't need it if king is in check because then the move is blocking the check
                 # (otherwise the blocking move would be skipped when we test for `in_check()` below)
                 if not isinstance(move.piece, King) and not king.in_check():
-                    # determine if the move exposes the king
                     move.do_move()
+                    # determine if the move exposes the king
                     if king.in_check():
                         move.revert()
                         continue
-                move.do_move()
+                else:
+                    move.do_move()
                 break
             else:
                 print('Draw: no moves available')
