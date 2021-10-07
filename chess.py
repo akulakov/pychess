@@ -24,63 +24,6 @@ PAWN_ODDS = 1
 DBG = 0
 RANDOMIZED_CHESS = 0
 
-piece_chars = {
-    '♖': '♜',
-    '♔': '♚',
-    '♘': '♞',
-    '♙': '♟︎',
-    '♗': '♝',
-    '♕': '♛',
-}
-
-piece_moves = {
-    'Knight': [
-        (2, 1),
-        (2, -1),
-        (-2, 1),
-        (-2, -1),
-        (1, 2),
-        (1, -2),
-        (-1, 2),
-        (-1, -2),
-    ],
-
-    'Rook': [
-            (1, 0), (-1, 0),
-            (0, 1), (0, -1)
-            ],
-
-    'King': [
-        (1, 0),
-        (-1, 0),
-        (0, 1),
-        (0, -1),
-        (1, 1),
-        (1, -1),
-        (-1, 1),
-        (-1, -1)
-    ],
-
-    'Queen': [
-        (1, 0),
-        (-1, 0),
-        (0, 1),
-        (0, -1),
-        (1, 1),
-        (1, -1),
-        (-1, 1),
-        (-1, -1)
-    ],
-
-    'Bishop': [
-        (1, 1),
-        (1, -1),
-        (-1, 1),
-        (-1, -1)
-        ],
-
-}
-
 def chain(lst):
     return itertools.chain(*lst)
 
@@ -152,6 +95,7 @@ class Loc:
             lst.append(Loc(x,y1))
 
         return lst
+
 
 class Move:
     def __init__(self, piece, loc, val=0, related=None, en_passant=False, en_passant_capture=False):
@@ -300,7 +244,7 @@ class Board:
             # this is only needed when calculating opponent_moves to determine if we are in check
             return 999
         else:
-            return piece_values[self[loc].__class__]
+            return piece_data[self[loc].__class__][0]
 
 class Piece:
     def __init__(self, board, color, loc):
@@ -314,7 +258,8 @@ class Piece:
         self.orig_location = False
 
     def __repr__(self):
-        return self.char if self.color==WHITE else piece_chars[self.char]
+        char = piece_data[self.__class__][1]
+        return char[0 if self.color==WHITE else 1]
 
     def line(self, dir, include_defense=False):
         return self.board.line(self, self.loc, dir, self.color, include_defense=include_defense)
@@ -332,7 +277,7 @@ class Piece:
         return self.board.get_loc_val(self.loc)
 
     def moves(self, include_defense=False):
-        mods = piece_moves[self.__class__.__name__]
+        mods = piece_data[self.__class__][2]
         return chain(self.line(mod, include_defense=include_defense) for mod in mods)
 
     @property
@@ -345,16 +290,15 @@ class Piece:
 
 
 class Bishop(Piece):
-    char = '♗'
+    pass
 
 class Rook(Piece):
-    char = '♖'
+    pass
 
 class Queen(Piece):
-    char = '♕'
+    pass
 
 class Pawn(Piece):
-    char = '♙'
     en_passant = False
     dir = None
 
@@ -418,11 +362,9 @@ class Pawn(Piece):
 
 
 class Knight(Piece):
-    char = '♘'
-
     def moves(self, include_defense=False):
         B = self.board
-        lst = [self.loc.modified(*mod) for mod in piece_moves['Knight']]
+        lst = [self.loc.modified(*mod) for mod in piece_data[Knight][2]]
 
         lst = self.remove_invalid(lst, include_defense=include_defense)
         lst = [Move(self, l, B.get_loc_val(l)) for l in lst]
@@ -430,8 +372,6 @@ class Knight(Piece):
 
 
 class King(Piece):
-    char = '♔'
-
     def all_moves(self, color, include_king=True, include_pawns=True, include_defense=False):
         B = self.board
         pc = B.all_pieces(color, (Knight, Bishop, Rook, Queen))
@@ -457,9 +397,9 @@ class King(Piece):
         return set(chain(p.attack_locs() for p in pawns))
 
     def get_king_moves(self, king, include_defense=False):
-        moves = [king.loc.modified(*mod) for mod in piece_moves['King']]
-        moves = king.remove_invalid(moves, include_defense=include_defense)
-        moves = {Move(king, m) for m in moves}
+        locs = [king.loc.modified(*mod) for mod in piece_data[King][2]]
+        locs = king.remove_invalid(locs, include_defense=include_defense)
+        moves = {Move(king, m) for m in locs}
         return moves
 
     def opponent_moves(self):
@@ -470,8 +410,7 @@ class King(Piece):
 
     def moves(self, dbg=0, include_defense=False, in_check=False):
         loc = self.loc
-        B = self.board
-        lst = [loc.modified(*mod) for mod in piece_moves['King']]
+        lst = [loc.modified(*mod) for mod in piece_data[King][2]]
 
         lst = self.remove_invalid(lst, include_defense=include_defense)
         lst = [Move(self, l, self.board.get_loc_val(l)) for l in lst]
@@ -480,8 +419,7 @@ class King(Piece):
 
         if self.orig_location and not in_check:
             lst = self.castling_moves(lst, unavailable)
-        unavailable_locs = set(m.loc for m in unavailable)
-        return [m for m in lst if m.loc not in unavailable_locs]
+        return list(set(lst) - unavailable)
 
     def castling_moves(self, lst, unavailable):
         loc = self.loc
@@ -630,12 +568,69 @@ class Chess:
         for r in reversed(list(self.board.display())):
             print(r)
 
-piece_values = {
-    Pawn: 1,
-    Bishop: 3,
-    Knight: 3,
-    Rook: 5,
-    Queen: 9,
+piece_data = {
+    Pawn: (1, ('♙', '♟︎'), []),
+
+    Knight: (3,
+       ('♘', '♞'),
+       [
+        (2, 1),
+        (2, -1),
+        (-2, 1),
+        (-2, -1),
+        (1, 2),
+        (1, -2),
+        (-1, 2),
+        (-1, -2),
+    ]),
+
+    Rook: (5,
+           ('♖', '♜'),
+            [
+            (1, 0), (-1, 0),
+            (0, 1), (0, -1)
+            ]
+          ),
+
+    King: (
+        -1,
+        ('♔', '♚'),
+        [
+        (1, 0),
+        (-1, 0),
+        (0, 1),
+        (0, -1),
+        (1, 1),
+        (1, -1),
+        (-1, 1),
+        (-1, -1)
+    ]),
+
+
+    Queen: (
+        9,
+        ('♕', '♛'),
+        [
+            (1, 0),
+            (-1, 0),
+            (0, 1),
+            (0, -1),
+            (1, 1),
+            (1, -1),
+            (-1, 1),
+            (-1, -1)
+    ]),
+
+    Bishop: (
+        3,
+        ('♗', '♝'),
+        [
+        (1, 1),
+        (1, -1),
+        (-1, 1),
+        (-1, -1)
+        ]),
+
 }
 
 
