@@ -187,8 +187,8 @@ The pawn is moving up one square, which means on the XY coordinates, the `x` wil
 and the `y` will be increased by 1. To make this sort of modifications more convenient, I'm
 adding the `modified()` method that creates and returns a new location object.
 
-Now is a good time to add all data related to pieces: values, display characters and move
-modifiers:
+Now is a good time to add all data related to pieces: values, display characters and x,y move
+modifiers (which are explained below):
 
 ```python
 piece_data = {
@@ -304,7 +304,7 @@ class Dir:
 ```
 
 I've used modifier tuples however, and I kept move modifer tuples for all pieces in the same
-structure, to keep logic and data nicely separated -- see the piece_data structure above.
+structure, to keep logic and data nicely separated -- see the `piece_data` structure above.
 
 Bishop, Queen and Rook moves are so similar that they can be done in the same method that will
 live in the `Piece` class.
