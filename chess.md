@@ -258,6 +258,10 @@ piece_data = {
 }
 ```
 
+Note that in the typical dark background terminal, white pieces may appear black and vice
+versa. I've used the proper unicode characters for respective color pieces, but don't be
+surprised if they appear reversed (not that it matters much).
+
 I can now display the board, move the pawn and display it again:
 
 ```python
@@ -465,7 +469,7 @@ Next I will add the capture moves:
 
 ```python
 def attack_locs(self):
-    return self.remove_invalid((
+    return self.board.remove_invalid((
         self.loc.modified(1, self.dir),
         self.loc.modified(-1, self.dir)
         ))

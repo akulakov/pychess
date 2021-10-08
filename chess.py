@@ -61,6 +61,9 @@ class Loc:
     def __eq__(self, other):
         return isinstance(other, Loc) and tuple(other) == tuple(self)
 
+    def __lt__(self, o):
+        return tuple(self) < tuple(o)
+
     def modified(self, x=None, y=None):
         l = Loc(*self)
         if x:
@@ -325,7 +328,7 @@ class Pawn(Piece):
         return pawn
 
     def attack_locs(self):
-        return self.remove_invalid((
+        return self.board.remove_invalid((
             self.loc.modified(1, self.dir),
             self.loc.modified(-1, self.dir)
             ))
@@ -412,7 +415,7 @@ class King(Piece):
         return moves
 
     def opponent_moves(self):
-        return self.all_moves(x_col(self.color), include_pawns=False, include_defense=True)
+        return self.all_moves(x_col(self.color), include_pawns=True, include_defense=True)
 
     def in_check(self):
         return [m for m in self.opponent_moves() if m.loc==self.loc]
